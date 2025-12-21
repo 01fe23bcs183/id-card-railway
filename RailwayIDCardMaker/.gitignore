@@ -1,0 +1,42 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+
+# NuGet
+packages/
+*.nupkg
+
+# Application data (runtime files)
+**/Data/*.db
+**/Data/*.db-*
+**/Photos/*
+**/Signatures/*
+**/Exports/*
+**/Backups/*
+
+# Keep folder structure
+!**/Photos/.gitkeep
+!**/Signatures/.gitkeep
+!**/Exports/.gitkeep
+!**/Backups/.gitkeep
+!**/Data/.gitkeep
+
+# Binaries
+*.exe
+*.dll
+*.pdb
+
+# Temp
+*.tmp
+*.bak
+*~
+Thumbs.db
+.DS_Store
