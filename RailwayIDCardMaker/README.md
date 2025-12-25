@@ -19,9 +19,9 @@ A Windows desktop application for creating and managing Indian Railway employee 
 
 ## Requirements
 
-- Windows 10/11
-- .NET Framework 4.7.2
-- Visual Studio 2019/2022 (for development)
+- Windows 7 SP1 / Windows 10/11 (32-bit or 64-bit)
+- .NET Framework 4.5
+- Visual Studio 2017/2019/2022 (for development)
 
 ## Installation
 
@@ -67,7 +67,6 @@ RailwayIDCardMaker/
 
 ## NuGet Packages
 
-- `System.Data.SQLite.Core` - Database
 - `ZXing.Net` - QR code generation
 - `EPPlus` - Excel import/export
 - `AForge.Video.DirectShow` - Webcam capture

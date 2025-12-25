@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.SQLite;
+using System.Data.OleDb;
 using System.IO;
 using RailwayIDCardMaker.Models;
 using RailwayIDCardMaker.Utils;
@@ -9,14 +9,30 @@ using RailwayIDCardMaker.Utils;
 namespace RailwayIDCardMaker.Services
 {
     /// <summary>
-    /// Database service for SQLite operations
+    /// Database service for Microsoft Access operations
     /// </summary>
     public static class DatabaseService
     {
         private static string _connectionString;
+        private static string _dbPath;
 
         /// <summary>
-        /// Get database connection string
+        /// Get database file path
+        /// </summary>
+        public static string DatabasePath
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_dbPath))
+                {
+                    _dbPath = Path.Combine(Helpers.GetAppDataDirectory(), "RailwayIDCard.mdb");
+                }
+                return _dbPath;
+            }
+        }
+
+        /// <summary>
+        /// Get database connection string (JET provider for Windows 7 compatibility)
         /// </summary>
         public static string ConnectionString
         {
@@ -24,8 +40,8 @@ namespace RailwayIDCardMaker.Services
             {
                 if (string.IsNullOrEmpty(_connectionString))
                 {
-                    string dbPath = Path.Combine(Helpers.GetAppDataDirectory(), Constants.DATABASE_FILENAME);
-                    _connectionString = $"Data Source={dbPath};Version=3;BusyTimeout=5000;Journal Mode=WAL;";
+                    // Use JET provider (built into Windows 7/8/10 32-bit)
+                    _connectionString = $"Provider=Microsoft.Jet.OLEDB.4.0;Data Source={DatabasePath};";
                 }
                 return _connectionString;
             }
@@ -36,213 +52,292 @@ namespace RailwayIDCardMaker.Services
         /// </summary>
         public static void InitializeDatabase()
         {
-            string dbPath = Path.Combine(Helpers.GetAppDataDirectory(), Constants.DATABASE_FILENAME);
-
             // Create database file if not exists
-            if (!File.Exists(dbPath))
+            if (!File.Exists(DatabasePath))
             {
-                SQLiteConnection.CreateFile(dbPath);
+                CreateAccessDatabase();
             }
 
             // Create tables
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-
-                // Create Users table
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE IF NOT EXISTS Users (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        Username TEXT NOT NULL UNIQUE,
-                        PasswordHash TEXT NOT NULL,
-                        FullName TEXT,
-                        Designation TEXT,
-                        Role TEXT DEFAULT 'Operator',
-                        IsActive INTEGER DEFAULT 1,
-                        CreatedDate TEXT,
-                        LastLoginDate TEXT
-                    )");
-
-                // Create Employees table
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE IF NOT EXISTS Employees (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        IDCardNumber TEXT UNIQUE,
-                        Name TEXT NOT NULL,
-                        FatherName TEXT,
-                        DateOfBirth TEXT,
-                        BloodGroup TEXT,
-                        Gender TEXT,
-                        Address TEXT,
-                        MobileNumber TEXT,
-                        AadhaarNumber TEXT,
-                        Designation TEXT,
-                        Department TEXT,
-                        PlaceOfPosting TEXT,
-                        ZoneCode TEXT,
-                        ZoneName TEXT,
-                        UnitCode TEXT,
-                        UnitName TEXT,
-                        PFNumber TEXT,
-                        DateOfJoining TEXT,
-                        DateOfRetirement TEXT,
-                        DateOfIssue TEXT,
-                        ValidityDate TEXT,
-                        IssuingAuthority TEXT,
-                        IssuingAuthorityDesignation TEXT,
-                        SerialNumber INTEGER,
-                        PhotoPath TEXT,
-                        SignaturePath TEXT,
-                        AuthoritySignaturePath TEXT,
-                        IsActive INTEGER DEFAULT 1,
-                        IsCardPrinted INTEGER DEFAULT 0,
-                        LastPrintedDate TEXT,
-                        PrintCount INTEGER DEFAULT 0,
-                        CreatedDate TEXT,
-                        ModifiedDate TEXT,
-                        CreatedBy TEXT,
-                        ModifiedBy TEXT,
-                        Remarks TEXT
-                    )");
-
-                // Create Zones table
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE IF NOT EXISTS Zones (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        Code TEXT NOT NULL UNIQUE,
-                        Name TEXT NOT NULL,
-                        Abbreviation TEXT,
-                        Headquarters TEXT,
-                        IsActive INTEGER DEFAULT 1
-                    )");
-
-                // Create Units table
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE IF NOT EXISTS Units (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        Code TEXT NOT NULL,
-                        Name TEXT NOT NULL,
-                        ZoneCode TEXT,
-                        IsActive INTEGER DEFAULT 1,
-                        UNIQUE(Code, ZoneCode)
-                    )");
-
-                // Create Settings table
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE IF NOT EXISTS Settings (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        DefaultIssuingAuthority TEXT,
-                        DefaultIssuingAuthorityDesignation TEXT,
-                        DefaultAuthoritySignaturePath TEXT,
-                        DefaultZoneCode TEXT,
-                        DefaultZoneName TEXT,
-                        DefaultUnitCode TEXT,
-                        DefaultUnitName TEXT,
-                        DefaultValidityYears INTEGER DEFAULT 5,
-                        LastSerialNumber INTEGER DEFAULT 0,
-                        DefaultPrinterName TEXT,
-                        PrintFrontAndBack INTEGER DEFAULT 1,
-                        UseDuplexPrinting INTEGER DEFAULT 0,
-                        LogoPath TEXT,
-                        OrganizationName TEXT DEFAULT 'Indian Railways',
-                        LastUpdated TEXT
-                    )");
-
-                // Create PrintLog table
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE IF NOT EXISTS PrintLog (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        EmployeeId INTEGER,
-                        IDCardNumber TEXT,
-                        PrintedDate TEXT,
-                        PrintedBy TEXT,
-                        PrintType TEXT,
-                        FOREIGN KEY(EmployeeId) REFERENCES Employees(Id)
-                    )");
-
-                // Insert default admin user if not exists
+                CreateTables(connection);
                 InsertDefaultUser(connection);
-
-                // Insert default settings if not exists
                 InsertDefaultSettings(connection);
-
-                // Insert default zones if not exists
                 InsertDefaultZones(connection);
             }
         }
 
-        private static void ExecuteNonQuery(SQLiteConnection connection, string sql)
+        private static void CreateAccessDatabase()
         {
-            using (var command = new SQLiteCommand(sql, connection))
+            // Ensure directory exists
+            string dir = Path.GetDirectoryName(DatabasePath);
+            if (!Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            // Create Access .mdb database using ADOX Catalog (COM)
+            // JET 4.0 provider is built into Windows 7
+            Type catalogType = Type.GetTypeFromProgID("ADOX.Catalog");
+            if (catalogType != null)
+            {
+                dynamic catalog = Activator.CreateInstance(catalogType);
+                try
+                {
+                    string connStr = $"Provider=Microsoft.Jet.OLEDB.4.0;Data Source={DatabasePath};Jet OLEDB:Engine Type=5;";
+                    catalog.Create(connStr);
+                }
+                finally
+                {
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(catalog);
+                    catalog = null;
+                    GC.Collect();
+                }
+            }
+            else
+            {
+                throw new Exception("Cannot create database. ADOX is not available on this system.");
+            }
+        }
+
+        private static void CreateTables(OleDbConnection connection)
+        {
+            // Create Users table
+            if (!TableExists(connection, "Users"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Users (
+                        Id COUNTER PRIMARY KEY,
+                        Username TEXT(50) NOT NULL,
+                        PasswordHash TEXT(255) NOT NULL,
+                        FullName TEXT(100),
+                        Designation TEXT(100),
+                        Role TEXT(20) DEFAULT 'Operator',
+                        IsActive YESNO DEFAULT TRUE,
+                        CreatedDate DATETIME,
+                        LastLoginDate DATETIME
+                    )");
+                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_Username ON Users (Username)");
+            }
+
+            // Create Employees table
+            if (!TableExists(connection, "Employees"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Employees (
+                        Id COUNTER PRIMARY KEY,
+                        IDCardNumber TEXT(20),
+                        Name TEXT(100) NOT NULL,
+                        FatherName TEXT(100),
+                        DateOfBirth DATETIME,
+                        BloodGroup TEXT(10),
+                        Gender TEXT(10),
+                        Address MEMO,
+                        MobileNumber TEXT(15),
+                        AadhaarNumber TEXT(20),
+                        Designation TEXT(100),
+                        Department TEXT(100),
+                        PlaceOfPosting TEXT(100),
+                        ZoneCode TEXT(10),
+                        ZoneName TEXT(100),
+                        UnitCode TEXT(10),
+                        UnitName TEXT(100),
+                        PFNumber TEXT(20),
+                        DateOfJoining DATETIME,
+                        DateOfRetirement DATETIME,
+                        DateOfIssue DATETIME,
+                        ValidityDate DATETIME,
+                        IssuingAuthority TEXT(100),
+                        IssuingAuthorityDesignation TEXT(100),
+                        SerialNumber LONG,
+                        PhotoPath TEXT(255),
+                        SignaturePath TEXT(255),
+                        AuthoritySignaturePath TEXT(255),
+                        IsActive YESNO DEFAULT TRUE,
+                        IsCardPrinted YESNO DEFAULT FALSE,
+                        LastPrintedDate DATETIME,
+                        PrintCount LONG DEFAULT 0,
+                        CreatedDate DATETIME,
+                        ModifiedDate DATETIME,
+                        CreatedBy TEXT(50),
+                        ModifiedBy TEXT(50),
+                        Remarks MEMO
+                    )");
+                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_IDCardNumber ON Employees (IDCardNumber)");
+            }
+
+            // Create Zones table
+            if (!TableExists(connection, "Zones"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Zones (
+                        Id COUNTER PRIMARY KEY,
+                        Code TEXT(10) NOT NULL,
+                        Name TEXT(100) NOT NULL,
+                        Abbreviation TEXT(20),
+                        Headquarters TEXT(100),
+                        IsActive YESNO DEFAULT TRUE
+                    )");
+                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_ZoneCode ON Zones (Code)");
+            }
+
+            // Create Units table
+            if (!TableExists(connection, "Units"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Units (
+                        Id COUNTER PRIMARY KEY,
+                        Code TEXT(10) NOT NULL,
+                        Name TEXT(100) NOT NULL,
+                        ZoneCode TEXT(10),
+                        IsActive YESNO DEFAULT TRUE
+                    )");
+            }
+
+            // Create Settings table
+            if (!TableExists(connection, "Settings"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Settings (
+                        Id COUNTER PRIMARY KEY,
+                        DefaultIssuingAuthority TEXT(100),
+                        DefaultIssuingAuthorityDesignation TEXT(100),
+                        DefaultAuthoritySignaturePath TEXT(255),
+                        DefaultZoneCode TEXT(10),
+                        DefaultZoneName TEXT(100),
+                        DefaultUnitCode TEXT(10),
+                        DefaultUnitName TEXT(100),
+                        DefaultValidityYears LONG DEFAULT 5,
+                        LastSerialNumber LONG DEFAULT 0,
+                        DefaultPrinterName TEXT(100),
+                        PrintFrontAndBack YESNO DEFAULT TRUE,
+                        UseDuplexPrinting YESNO DEFAULT FALSE,
+                        LogoPath TEXT(255),
+                        OrganizationName TEXT(100) DEFAULT 'Indian Railways',
+                        LastUpdated DATETIME
+                    )");
+            }
+
+            // Create PrintLog table
+            if (!TableExists(connection, "PrintLog"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE PrintLog (
+                        Id COUNTER PRIMARY KEY,
+                        EmployeeId LONG,
+                        IDCardNumber TEXT(20),
+                        PrintedDate DATETIME,
+                        PrintedBy TEXT(50),
+                        PrintType TEXT(20)
+                    )");
+            }
+        }
+
+        private static bool TableExists(OleDbConnection connection, string tableName)
+        {
+            DataTable schema = connection.GetOleDbSchemaTable(OleDbSchemaGuid.Tables,
+                new object[] { null, null, tableName, "TABLE" });
+            return schema.Rows.Count > 0;
+        }
+
+        private static void ExecuteNonQuery(OleDbConnection connection, string sql)
+        {
+            using (var command = new OleDbCommand(sql, connection))
             {
                 command.ExecuteNonQuery();
             }
         }
 
-        private static void InsertDefaultUser(SQLiteConnection connection)
+        private static void InsertDefaultUser(OleDbConnection connection)
         {
-            string checkSql = "SELECT COUNT(*) FROM Users WHERE Username = @username";
-            using (var command = new SQLiteCommand(checkSql, connection))
+            string checkSql = "SELECT COUNT(*) FROM Users WHERE Username = ?";
+            using (var command = new OleDbCommand(checkSql, connection))
             {
-                command.Parameters.AddWithValue("@username", Constants.DEFAULT_USERNAME);
+                command.Parameters.AddWithValue("?", Constants.DEFAULT_USERNAME);
                 int count = Convert.ToInt32(command.ExecuteScalar());
 
                 if (count == 0)
                 {
                     string insertSql = @"INSERT INTO Users (Username, PasswordHash, FullName, Designation, Role, IsActive, CreatedDate)
-                                        VALUES (@username, @password, @fullname, @designation, @role, 1, @created)";
-                    using (var insertCommand = new SQLiteCommand(insertSql, connection))
+                                        VALUES (?, ?, ?, ?, ?, TRUE, ?)";
+                    using (var insertCommand = new OleDbCommand(insertSql, connection))
                     {
-                        insertCommand.Parameters.AddWithValue("@username", Constants.DEFAULT_USERNAME);
-                        insertCommand.Parameters.AddWithValue("@password", Helpers.HashPassword(Constants.DEFAULT_PASSWORD));
-                        insertCommand.Parameters.AddWithValue("@fullname", "Administrator");
-                        insertCommand.Parameters.AddWithValue("@designation", "System Admin");
-                        insertCommand.Parameters.AddWithValue("@role", UserRoles.Admin);
-                        insertCommand.Parameters.AddWithValue("@created", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                        insertCommand.Parameters.AddWithValue("?", Constants.DEFAULT_USERNAME);
+                        insertCommand.Parameters.AddWithValue("?", Helpers.HashPassword(Constants.DEFAULT_PASSWORD));
+                        insertCommand.Parameters.AddWithValue("?", "Administrator");
+                        insertCommand.Parameters.AddWithValue("?", "System Admin");
+                        insertCommand.Parameters.AddWithValue("?", UserRoles.Admin);
+                        insertCommand.Parameters.AddWithValue("?", DateTime.Now);
                         insertCommand.ExecuteNonQuery();
                     }
                 }
             }
         }
 
-        private static void InsertDefaultSettings(SQLiteConnection connection)
+        private static void InsertDefaultSettings(OleDbConnection connection)
         {
             string checkSql = "SELECT COUNT(*) FROM Settings";
-            using (var command = new SQLiteCommand(checkSql, connection))
+            using (var command = new OleDbCommand(checkSql, connection))
             {
                 int count = Convert.ToInt32(command.ExecuteScalar());
 
                 if (count == 0)
                 {
-                    string insertSql = @"INSERT INTO Settings (DefaultValidityYears, LastSerialNumber, PrintFrontAndBack, OrganizationName)
-                                        VALUES (5, 0, 1, 'Indian Railways')";
-                    using (var insertCommand = new SQLiteCommand(insertSql, connection))
+                    string insertSql = @"INSERT INTO Settings (OrganizationName, DefaultValidityYears, LastSerialNumber, PrintFrontAndBack, UseDuplexPrinting, LastUpdated)
+                                        VALUES (?, ?, ?, TRUE, FALSE, ?)";
+                    using (var insertCommand = new OleDbCommand(insertSql, connection))
                     {
+                        insertCommand.Parameters.AddWithValue("?", "Indian Railways");
+                        insertCommand.Parameters.AddWithValue("?", 5);
+                        insertCommand.Parameters.AddWithValue("?", 0);
+                        insertCommand.Parameters.AddWithValue("?", DateTime.Now);
                         insertCommand.ExecuteNonQuery();
                     }
                 }
             }
         }
 
-        private static void InsertDefaultZones(SQLiteConnection connection)
+        private static void InsertDefaultZones(OleDbConnection connection)
         {
             string checkSql = "SELECT COUNT(*) FROM Zones";
-            using (var command = new SQLiteCommand(checkSql, connection))
+            using (var command = new OleDbCommand(checkSql, connection))
             {
                 int count = Convert.ToInt32(command.ExecuteScalar());
 
                 if (count == 0)
                 {
-                    foreach (var zone in Zone.GetAllZones())
+                    var zones = new[]
                     {
-                        string insertSql = @"INSERT INTO Zones (Code, Name, Abbreviation, Headquarters, IsActive)
-                                            VALUES (@code, @name, @abbr, @hq, 1)";
-                        using (var insertCommand = new SQLiteCommand(insertSql, connection))
+                        ("01", "Central Railway", "CR", "Mumbai"),
+                        ("02", "Eastern Railway", "ER", "Kolkata"),
+                        ("03", "East Central Railway", "ECR", "Hajipur"),
+                        ("04", "East Coast Railway", "ECoR", "Bhubaneswar"),
+                        ("05", "Northern Railway", "NR", "New Delhi"),
+                        ("06", "North Central Railway", "NCR", "Prayagraj"),
+                        ("07", "North Eastern Railway", "NER", "Gorakhpur"),
+                        ("08", "Northeast Frontier Railway", "NFR", "Guwahati"),
+                        ("09", "North Western Railway", "NWR", "Jaipur"),
+                        ("10", "Southern Railway", "SR", "Chennai"),
+                        ("11", "South Central Railway", "SCR", "Secunderabad"),
+                        ("12", "South Eastern Railway", "SER", "Kolkata"),
+                        ("13", "South East Central Railway", "SECR", "Bilaspur"),
+                        ("14", "South Western Railway", "SWR", "Hubli"),
+                        ("15", "Western Railway", "WR", "Mumbai"),
+                        ("16", "West Central Railway", "WCR", "Jabalpur"),
+                        ("17", "Metro Railway Kolkata", "MRK", "Kolkata")
+                    };
+
+                    foreach (var zone in zones)
+                    {
+                        string insertSql = "INSERT INTO Zones (Code, Name, Abbreviation, Headquarters, IsActive) VALUES (?, ?, ?, ?, TRUE)";
+                        using (var insertCommand = new OleDbCommand(insertSql, connection))
                         {
-                            insertCommand.Parameters.AddWithValue("@code", zone.Code);
-                            insertCommand.Parameters.AddWithValue("@name", zone.Name);
-                            insertCommand.Parameters.AddWithValue("@abbr", zone.Abbreviation);
-                            insertCommand.Parameters.AddWithValue("@hq", zone.Headquarters);
+                            insertCommand.Parameters.AddWithValue("?", zone.Item1);
+                            insertCommand.Parameters.AddWithValue("?", zone.Item2);
+                            insertCommand.Parameters.AddWithValue("?", zone.Item3);
+                            insertCommand.Parameters.AddWithValue("?", zone.Item4);
                             insertCommand.ExecuteNonQuery();
                         }
                     }
@@ -252,31 +347,24 @@ namespace RailwayIDCardMaker.Services
 
         #region User Operations
 
-        /// <summary>
-        /// Validate user login
-        /// </summary>
-        public static User ValidateUser(string username, string password)
+        public static User AuthenticateUser(string username, string passwordHash)
         {
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-
-                string sql = @"SELECT * FROM Users WHERE Username = @username AND IsActive = 1";
-                using (var command = new SQLiteCommand(sql, connection))
+                string sql = "SELECT * FROM Users WHERE Username = ? AND PasswordHash = ? AND IsActive = TRUE";
+                using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("@username", username);
+                    command.Parameters.AddWithValue("?", username);
+                    command.Parameters.AddWithValue("?", passwordHash);
 
                     using (var reader = command.ExecuteReader())
                     {
                         if (reader.Read())
                         {
-                            User user = MapReaderToUser(reader);
-                            if (user.VerifyPassword(password))
-                            {
-                                // Update last login date
-                                UpdateLastLogin(user.Id);
-                                return user;
-                            }
+                            var user = MapUser(reader);
+                            UpdateLastLogin(user.Id);
+                            return user;
                         }
                     }
                 }
@@ -284,22 +372,37 @@ namespace RailwayIDCardMaker.Services
             return null;
         }
 
-        private static void UpdateLastLogin(int userId)
+        public static void UpdateLastLogin(int userId)
         {
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-                string sql = "UPDATE Users SET LastLoginDate = @date WHERE Id = @id";
-                using (var command = new SQLiteCommand(sql, connection))
+                string sql = "UPDATE Users SET LastLoginDate = ? WHERE Id = ?";
+                using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("@date", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                    command.Parameters.AddWithValue("@id", userId);
+                    command.Parameters.AddWithValue("?", DateTime.Now);
+                    command.Parameters.AddWithValue("?", userId);
                     command.ExecuteNonQuery();
                 }
             }
         }
 
-        private static User MapReaderToUser(SQLiteDataReader reader)
+        public static bool ChangePassword(int userId, string newPasswordHash)
+        {
+            using (var connection = new OleDbConnection(ConnectionString))
+            {
+                connection.Open();
+                string sql = "UPDATE Users SET PasswordHash = ? WHERE Id = ?";
+                using (var command = new OleDbCommand(sql, connection))
+                {
+                    command.Parameters.AddWithValue("?", newPasswordHash);
+                    command.Parameters.AddWithValue("?", userId);
+                    return command.ExecuteNonQuery() > 0;
+                }
+            }
+        }
+
+        private static User MapUser(OleDbDataReader reader)
         {
             return new User
             {
@@ -309,181 +412,51 @@ namespace RailwayIDCardMaker.Services
                 FullName = reader["FullName"]?.ToString(),
                 Designation = reader["Designation"]?.ToString(),
                 Role = reader["Role"]?.ToString(),
-                IsActive = Convert.ToInt32(reader["IsActive"]) == 1,
-                CreatedDate = DateTime.Parse(reader["CreatedDate"]?.ToString() ?? DateTime.Now.ToString()),
-                LastLoginDate = string.IsNullOrEmpty(reader["LastLoginDate"]?.ToString()) ?
-                    (DateTime?)null : DateTime.Parse(reader["LastLoginDate"].ToString())
+                IsActive = Convert.ToBoolean(reader["IsActive"]),
+                CreatedDate = reader["CreatedDate"] != DBNull.Value ? Convert.ToDateTime(reader["CreatedDate"]) : DateTime.MinValue,
+                LastLoginDate = reader["LastLoginDate"] != DBNull.Value ? Convert.ToDateTime(reader["LastLoginDate"]) : (DateTime?)null
             };
-        }
-
-        /// <summary>
-        /// Authenticate user with username and password
-        /// </summary>
-        public static User AuthenticateUser(string username, string password)
-        {
-            return ValidateUser(username, password);
-        }
-
-        /// <summary>
-        /// Update user password
-        /// </summary>
-        public static void UpdateUserPassword(int userId, string newPassword)
-        {
-            using (var connection = new SQLiteConnection(ConnectionString))
-            {
-                connection.Open();
-
-                string sql = "UPDATE Users SET PasswordHash = @password WHERE Id = @id";
-                using (var command = new SQLiteCommand(sql, connection))
-                {
-                    command.Parameters.AddWithValue("@password", Helpers.HashPassword(newPassword));
-                    command.Parameters.AddWithValue("@id", userId);
-                    command.ExecuteNonQuery();
-                }
-            }
         }
 
         #endregion
 
         #region Employee Operations
 
-        /// <summary>
-        /// Save employee (insert or update)
-        /// </summary>
-        public static int SaveEmployee(Employee employee)
+        public static List<Employee> GetAllEmployees()
         {
-            using (var connection = new SQLiteConnection(ConnectionString))
+            var employees = new List<Employee>();
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-
-                if (employee.Id == 0)
+                string sql = "SELECT * FROM Employees WHERE IsActive = TRUE ORDER BY Name";
+                using (var command = new OleDbCommand(sql, connection))
                 {
-                    // Insert new employee
-                    return InsertEmployee(connection, employee);
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            employees.Add(MapEmployee(reader));
+                        }
+                    }
                 }
-                else
-                {
-                    // Update existing employee
-                    UpdateEmployee(connection, employee);
-                    return employee.Id;
-                }
             }
+            return employees;
         }
 
-        private static int InsertEmployee(SQLiteConnection connection, Employee emp)
+        public static Employee GetEmployeeById(int id)
         {
-            string sql = @"INSERT INTO Employees (
-                IDCardNumber, Name, FatherName, DateOfBirth, BloodGroup, Gender,
-                Address, MobileNumber, AadhaarNumber, Designation, Department,
-                PlaceOfPosting, ZoneCode, ZoneName, UnitCode, UnitName, PFNumber,
-                DateOfJoining, DateOfRetirement, DateOfIssue, ValidityDate,
-                IssuingAuthority, IssuingAuthorityDesignation, SerialNumber,
-                PhotoPath, SignaturePath, AuthoritySignaturePath,
-                IsActive, IsCardPrinted, PrintCount, CreatedDate, CreatedBy, Remarks
-            ) VALUES (
-                @idcard, @name, @father, @dob, @blood, @gender,
-                @address, @mobile, @aadhaar, @designation, @department,
-                @posting, @zonecode, @zonename, @unitcode, @unitname, @pf,
-                @joining, @retirement, @issue, @validity,
-                @authority, @authoritydesig, @serial,
-                @photo, @signature, @authsig,
-                @active, @printed, @printcount, @created, @createdby, @remarks
-            );
-            SELECT last_insert_rowid();";
-
-            using (var command = new SQLiteCommand(sql, connection))
-            {
-                AddEmployeeParameters(command, emp);
-                command.Parameters.AddWithValue("@created", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                command.Parameters.AddWithValue("@createdby", emp.CreatedBy ?? "");
-
-                return Convert.ToInt32(command.ExecuteScalar());
-            }
-        }
-
-        private static void UpdateEmployee(SQLiteConnection connection, Employee emp)
-        {
-            string sql = @"UPDATE Employees SET
-                IDCardNumber = @idcard, Name = @name, FatherName = @father,
-                DateOfBirth = @dob, BloodGroup = @blood, Gender = @gender,
-                Address = @address, MobileNumber = @mobile, AadhaarNumber = @aadhaar,
-                Designation = @designation, Department = @department,
-                PlaceOfPosting = @posting, ZoneCode = @zonecode, ZoneName = @zonename,
-                UnitCode = @unitcode, UnitName = @unitname, PFNumber = @pf,
-                DateOfJoining = @joining, DateOfRetirement = @retirement,
-                DateOfIssue = @issue, ValidityDate = @validity,
-                IssuingAuthority = @authority, IssuingAuthorityDesignation = @authoritydesig,
-                SerialNumber = @serial, PhotoPath = @photo, SignaturePath = @signature,
-                AuthoritySignaturePath = @authsig, IsActive = @active,
-                IsCardPrinted = @printed, PrintCount = @printcount,
-                ModifiedDate = @modified, ModifiedBy = @modifiedby, Remarks = @remarks
-                WHERE Id = @id";
-
-            using (var command = new SQLiteCommand(sql, connection))
-            {
-                AddEmployeeParameters(command, emp);
-                command.Parameters.AddWithValue("@id", emp.Id);
-                command.Parameters.AddWithValue("@modified", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                command.Parameters.AddWithValue("@modifiedby", emp.ModifiedBy ?? "");
-
-                command.ExecuteNonQuery();
-            }
-        }
-
-        private static void AddEmployeeParameters(SQLiteCommand command, Employee emp)
-        {
-            command.Parameters.AddWithValue("@idcard", emp.IDCardNumber ?? "");
-            command.Parameters.AddWithValue("@name", emp.Name ?? "");
-            command.Parameters.AddWithValue("@father", emp.FatherName ?? "");
-            command.Parameters.AddWithValue("@dob", emp.DateOfBirth?.ToString("yyyy-MM-dd") ?? "");
-            command.Parameters.AddWithValue("@blood", emp.BloodGroup ?? "");
-            command.Parameters.AddWithValue("@gender", emp.Gender ?? "");
-            command.Parameters.AddWithValue("@address", emp.Address ?? "");
-            command.Parameters.AddWithValue("@mobile", emp.MobileNumber ?? "");
-            command.Parameters.AddWithValue("@aadhaar", emp.AadhaarNumber ?? "");
-            command.Parameters.AddWithValue("@designation", emp.Designation ?? "");
-            command.Parameters.AddWithValue("@department", emp.Department ?? "");
-            command.Parameters.AddWithValue("@posting", emp.PlaceOfPosting ?? "");
-            command.Parameters.AddWithValue("@zonecode", emp.ZoneCode ?? "");
-            command.Parameters.AddWithValue("@zonename", emp.ZoneName ?? "");
-            command.Parameters.AddWithValue("@unitcode", emp.UnitCode ?? "");
-            command.Parameters.AddWithValue("@unitname", emp.UnitName ?? "");
-            command.Parameters.AddWithValue("@pf", emp.PFNumber ?? "");
-            command.Parameters.AddWithValue("@joining", emp.DateOfJoining?.ToString("yyyy-MM-dd") ?? "");
-            command.Parameters.AddWithValue("@retirement", emp.DateOfRetirement?.ToString("yyyy-MM-dd") ?? "");
-            command.Parameters.AddWithValue("@issue", emp.DateOfIssue?.ToString("yyyy-MM-dd") ?? "");
-            command.Parameters.AddWithValue("@validity", emp.ValidityDate?.ToString("yyyy-MM-dd") ?? "");
-            command.Parameters.AddWithValue("@authority", emp.IssuingAuthority ?? "");
-            command.Parameters.AddWithValue("@authoritydesig", emp.IssuingAuthorityDesignation ?? "");
-            command.Parameters.AddWithValue("@serial", emp.SerialNumber);
-            command.Parameters.AddWithValue("@photo", emp.PhotoPath ?? "");
-            command.Parameters.AddWithValue("@signature", emp.SignaturePath ?? "");
-            command.Parameters.AddWithValue("@authsig", emp.AuthoritySignaturePath ?? "");
-            command.Parameters.AddWithValue("@active", emp.IsActive ? 1 : 0);
-            command.Parameters.AddWithValue("@printed", emp.IsCardPrinted ? 1 : 0);
-            command.Parameters.AddWithValue("@printcount", emp.PrintCount);
-            command.Parameters.AddWithValue("@remarks", emp.Remarks ?? "");
-        }
-
-        /// <summary>
-        /// Get employee by ID
-        /// </summary>
-        public static Employee GetEmployee(int id)
-        {
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-
-                string sql = "SELECT * FROM Employees WHERE Id = @id";
-                using (var command = new SQLiteCommand(sql, connection))
+                string sql = "SELECT * FROM Employees WHERE Id = ?";
+                using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("@id", id);
-
+                    command.Parameters.AddWithValue("?", id);
                     using (var reader = command.ExecuteReader())
                     {
                         if (reader.Read())
                         {
-                            return MapReaderToEmployee(reader);
+                            return MapEmployee(reader);
                         }
                     }
                 }
@@ -491,97 +464,149 @@ namespace RailwayIDCardMaker.Services
             return null;
         }
 
-        /// <summary>
-        /// Get all employees
-        /// </summary>
-        public static List<Employee> GetAllEmployees(bool activeOnly = true)
+        public static int SaveEmployee(Employee employee)
         {
-            var employees = new List<Employee>();
-
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
 
-                string sql = activeOnly ?
-                    "SELECT * FROM Employees WHERE IsActive = 1 ORDER BY Name" :
-                    "SELECT * FROM Employees ORDER BY Name";
-
-                using (var command = new SQLiteCommand(sql, connection))
+                if (employee.Id == 0)
                 {
-                    using (var reader = command.ExecuteReader())
+                    // Insert new employee
+                    string sql = @"INSERT INTO Employees (IDCardNumber, Name, FatherName, DateOfBirth, BloodGroup, Gender,
+                        Address, MobileNumber, AadhaarNumber, Designation, Department, PlaceOfPosting,
+                        ZoneCode, ZoneName, UnitCode, UnitName, PFNumber, DateOfJoining, DateOfRetirement,
+                        DateOfIssue, ValidityDate, IssuingAuthority, IssuingAuthorityDesignation, SerialNumber,
+                        PhotoPath, SignaturePath, AuthoritySignaturePath, IsActive, IsCardPrinted, PrintCount,
+                        CreatedDate, CreatedBy, Remarks)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, FALSE, 0, ?, ?, ?)";
+
+                    using (var command = new OleDbCommand(sql, connection))
                     {
-                        while (reader.Read())
-                        {
-                            employees.Add(MapReaderToEmployee(reader));
-                        }
+                        AddEmployeeParameters(command, employee);
+                        command.Parameters.AddWithValue("?", DateTime.Now);
+                        command.Parameters.AddWithValue("?", employee.CreatedBy ?? "");
+                        command.Parameters.AddWithValue("?", employee.Remarks ?? "");
+                        command.ExecuteNonQuery();
+                    }
+
+                    // Get the new ID
+                    using (var idCommand = new OleDbCommand("SELECT @@IDENTITY", connection))
+                    {
+                        employee.Id = Convert.ToInt32(idCommand.ExecuteScalar());
                     }
                 }
-            }
+                else
+                {
+                    // Update existing employee
+                    string sql = @"UPDATE Employees SET 
+                        IDCardNumber = ?, Name = ?, FatherName = ?, DateOfBirth = ?, BloodGroup = ?, Gender = ?,
+                        Address = ?, MobileNumber = ?, AadhaarNumber = ?, Designation = ?, Department = ?, PlaceOfPosting = ?,
+                        ZoneCode = ?, ZoneName = ?, UnitCode = ?, UnitName = ?, PFNumber = ?, DateOfJoining = ?, DateOfRetirement = ?,
+                        DateOfIssue = ?, ValidityDate = ?, IssuingAuthority = ?, IssuingAuthorityDesignation = ?, SerialNumber = ?,
+                        PhotoPath = ?, SignaturePath = ?, AuthoritySignaturePath = ?, ModifiedDate = ?, ModifiedBy = ?, Remarks = ?
+                        WHERE Id = ?";
 
-            return employees;
+                    using (var command = new OleDbCommand(sql, connection))
+                    {
+                        AddEmployeeParameters(command, employee);
+                        command.Parameters.AddWithValue("?", DateTime.Now);
+                        command.Parameters.AddWithValue("?", employee.ModifiedBy ?? "");
+                        command.Parameters.AddWithValue("?", employee.Remarks ?? "");
+                        command.Parameters.AddWithValue("?", employee.Id);
+                        command.ExecuteNonQuery();
+                    }
+                }
+
+                return employee.Id;
+            }
         }
 
-        /// <summary>
-        /// Search employees by name, ID, or PF number
-        /// </summary>
+        private static void AddEmployeeParameters(OleDbCommand command, Employee employee)
+        {
+            command.Parameters.AddWithValue("?", employee.IDCardNumber ?? "");
+            command.Parameters.AddWithValue("?", employee.Name ?? "");
+            command.Parameters.AddWithValue("?", employee.FatherName ?? "");
+            command.Parameters.AddWithValue("?", employee.DateOfBirth.HasValue ? (object)employee.DateOfBirth.Value : DBNull.Value);
+            command.Parameters.AddWithValue("?", employee.BloodGroup ?? "");
+            command.Parameters.AddWithValue("?", employee.Gender ?? "");
+            command.Parameters.AddWithValue("?", employee.Address ?? "");
+            command.Parameters.AddWithValue("?", employee.MobileNumber ?? "");
+            command.Parameters.AddWithValue("?", employee.AadhaarNumber ?? "");
+            command.Parameters.AddWithValue("?", employee.Designation ?? "");
+            command.Parameters.AddWithValue("?", employee.Department ?? "");
+            command.Parameters.AddWithValue("?", employee.PlaceOfPosting ?? "");
+            command.Parameters.AddWithValue("?", employee.ZoneCode ?? "");
+            command.Parameters.AddWithValue("?", employee.ZoneName ?? "");
+            command.Parameters.AddWithValue("?", employee.UnitCode ?? "");
+            command.Parameters.AddWithValue("?", employee.UnitName ?? "");
+            command.Parameters.AddWithValue("?", employee.PFNumber ?? "");
+            command.Parameters.AddWithValue("?", employee.DateOfJoining.HasValue ? (object)employee.DateOfJoining.Value : DBNull.Value);
+            command.Parameters.AddWithValue("?", employee.DateOfRetirement.HasValue ? (object)employee.DateOfRetirement.Value : DBNull.Value);
+            command.Parameters.AddWithValue("?", employee.DateOfIssue.HasValue ? (object)employee.DateOfIssue.Value : DBNull.Value);
+            command.Parameters.AddWithValue("?", employee.ValidityDate.HasValue ? (object)employee.ValidityDate.Value : DBNull.Value);
+            command.Parameters.AddWithValue("?", employee.IssuingAuthority ?? "");
+            command.Parameters.AddWithValue("?", employee.IssuingAuthorityDesignation ?? "");
+            command.Parameters.AddWithValue("?", employee.SerialNumber);
+            command.Parameters.AddWithValue("?", employee.PhotoPath ?? "");
+            command.Parameters.AddWithValue("?", employee.SignaturePath ?? "");
+            command.Parameters.AddWithValue("?", employee.AuthoritySignaturePath ?? "");
+        }
+
+        public static bool DeleteEmployee(int id)
+        {
+            using (var connection = new OleDbConnection(ConnectionString))
+            {
+                connection.Open();
+                // Soft delete
+                string sql = "UPDATE Employees SET IsActive = FALSE WHERE Id = ?";
+                using (var command = new OleDbCommand(sql, connection))
+                {
+                    command.Parameters.AddWithValue("?", id);
+                    return command.ExecuteNonQuery() > 0;
+                }
+            }
+        }
+
         public static List<Employee> SearchEmployees(string searchTerm)
         {
             var employees = new List<Employee>();
-
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-
                 string sql = @"SELECT * FROM Employees 
-                              WHERE IsActive = 1 AND (
-                                  Name LIKE @search OR 
-                                  IDCardNumber LIKE @search OR 
-                                  PFNumber LIKE @search OR
-                                  AadhaarNumber LIKE @search
-                              ) ORDER BY Name";
-
-                using (var command = new SQLiteCommand(sql, connection))
+                              WHERE IsActive = TRUE AND 
+                              (Name LIKE ? OR IDCardNumber LIKE ? OR MobileNumber LIKE ? OR Department LIKE ?)
+                              ORDER BY Name";
+                using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("@search", $"%{searchTerm}%");
+                    string term = $"%{searchTerm}%";
+                    command.Parameters.AddWithValue("?", term);
+                    command.Parameters.AddWithValue("?", term);
+                    command.Parameters.AddWithValue("?", term);
+                    command.Parameters.AddWithValue("?", term);
 
                     using (var reader = command.ExecuteReader())
                     {
                         while (reader.Read())
                         {
-                            employees.Add(MapReaderToEmployee(reader));
+                            employees.Add(MapEmployee(reader));
                         }
                     }
                 }
             }
-
             return employees;
         }
 
-        /// <summary>
-        /// Delete employee (soft delete)
-        /// </summary>
-        public static void DeleteEmployee(int id)
+        private static Employee MapEmployee(OleDbDataReader reader)
         {
-            using (var connection = new SQLiteConnection(ConnectionString))
-            {
-                connection.Open();
-                string sql = "UPDATE Employees SET IsActive = 0 WHERE Id = @id";
-                using (var command = new SQLiteCommand(sql, connection))
-                {
-                    command.Parameters.AddWithValue("@id", id);
-                    command.ExecuteNonQuery();
-                }
-            }
-        }
-
-        private static Employee MapReaderToEmployee(SQLiteDataReader reader)
-        {
-            var emp = new Employee
+            return new Employee
             {
                 Id = Convert.ToInt32(reader["Id"]),
                 IDCardNumber = reader["IDCardNumber"]?.ToString(),
                 Name = reader["Name"]?.ToString(),
                 FatherName = reader["FatherName"]?.ToString(),
+                DateOfBirth = reader["DateOfBirth"] != DBNull.Value ? Convert.ToDateTime(reader["DateOfBirth"]) : (DateTime?)null,
                 BloodGroup = reader["BloodGroup"]?.ToString(),
                 Gender = reader["Gender"]?.ToString(),
                 Address = reader["Address"]?.ToString(),
@@ -595,60 +620,40 @@ namespace RailwayIDCardMaker.Services
                 UnitCode = reader["UnitCode"]?.ToString(),
                 UnitName = reader["UnitName"]?.ToString(),
                 PFNumber = reader["PFNumber"]?.ToString(),
+                DateOfJoining = reader["DateOfJoining"] != DBNull.Value ? Convert.ToDateTime(reader["DateOfJoining"]) : (DateTime?)null,
+                DateOfRetirement = reader["DateOfRetirement"] != DBNull.Value ? Convert.ToDateTime(reader["DateOfRetirement"]) : (DateTime?)null,
+                DateOfIssue = reader["DateOfIssue"] != DBNull.Value ? Convert.ToDateTime(reader["DateOfIssue"]) : (DateTime?)null,
+                ValidityDate = reader["ValidityDate"] != DBNull.Value ? Convert.ToDateTime(reader["ValidityDate"]) : (DateTime?)null,
                 IssuingAuthority = reader["IssuingAuthority"]?.ToString(),
                 IssuingAuthorityDesignation = reader["IssuingAuthorityDesignation"]?.ToString(),
-                SerialNumber = Convert.ToInt32(reader["SerialNumber"]),
+                SerialNumber = reader["SerialNumber"] != DBNull.Value ? Convert.ToInt32(reader["SerialNumber"]) : 0,
                 PhotoPath = reader["PhotoPath"]?.ToString(),
                 SignaturePath = reader["SignaturePath"]?.ToString(),
                 AuthoritySignaturePath = reader["AuthoritySignaturePath"]?.ToString(),
-                IsActive = Convert.ToInt32(reader["IsActive"]) == 1,
-                IsCardPrinted = Convert.ToInt32(reader["IsCardPrinted"]) == 1,
-                PrintCount = Convert.ToInt32(reader["PrintCount"]),
+                IsActive = Convert.ToBoolean(reader["IsActive"]),
+                IsCardPrinted = Convert.ToBoolean(reader["IsCardPrinted"]),
+                LastPrintedDate = reader["LastPrintedDate"] != DBNull.Value ? Convert.ToDateTime(reader["LastPrintedDate"]) : (DateTime?)null,
+                PrintCount = reader["PrintCount"] != DBNull.Value ? Convert.ToInt32(reader["PrintCount"]) : 0,
+                CreatedDate = reader["CreatedDate"] != DBNull.Value ? Convert.ToDateTime(reader["CreatedDate"]) : DateTime.MinValue,
+                ModifiedDate = reader["ModifiedDate"] != DBNull.Value ? Convert.ToDateTime(reader["ModifiedDate"]) : (DateTime?)null,
+                CreatedBy = reader["CreatedBy"]?.ToString(),
+                ModifiedBy = reader["ModifiedBy"]?.ToString(),
                 Remarks = reader["Remarks"]?.ToString()
             };
-
-            // Parse dates
-            DateTime tempDate;
-            if (DateTime.TryParse(reader["DateOfBirth"]?.ToString(), out tempDate))
-                emp.DateOfBirth = tempDate;
-            if (DateTime.TryParse(reader["DateOfJoining"]?.ToString(), out tempDate))
-                emp.DateOfJoining = tempDate;
-            if (DateTime.TryParse(reader["DateOfRetirement"]?.ToString(), out tempDate))
-                emp.DateOfRetirement = tempDate;
-            if (DateTime.TryParse(reader["DateOfIssue"]?.ToString(), out tempDate))
-                emp.DateOfIssue = tempDate;
-            if (DateTime.TryParse(reader["ValidityDate"]?.ToString(), out tempDate))
-                emp.ValidityDate = tempDate;
-            if (DateTime.TryParse(reader["CreatedDate"]?.ToString(), out tempDate))
-                emp.CreatedDate = tempDate;
-            if (DateTime.TryParse(reader["ModifiedDate"]?.ToString(), out tempDate))
-                emp.ModifiedDate = tempDate;
-            if (DateTime.TryParse(reader["LastPrintedDate"]?.ToString(), out tempDate))
-                emp.LastPrintedDate = tempDate;
-
-            emp.CreatedBy = reader["CreatedBy"]?.ToString();
-            emp.ModifiedBy = reader["ModifiedBy"]?.ToString();
-
-            return emp;
         }
 
         #endregion
 
         #region Zone Operations
 
-        /// <summary>
-        /// Get all zones
-        /// </summary>
         public static List<Zone> GetAllZones()
         {
             var zones = new List<Zone>();
-
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-
-                string sql = "SELECT * FROM Zones WHERE IsActive = 1 ORDER BY Code";
-                using (var command = new SQLiteCommand(sql, connection))
+                string sql = "SELECT * FROM Zones WHERE IsActive = TRUE ORDER BY Code";
+                using (var command = new OleDbCommand(sql, connection))
                 {
                     using (var reader = command.ExecuteReader())
                     {
@@ -661,13 +666,12 @@ namespace RailwayIDCardMaker.Services
                                 Name = reader["Name"]?.ToString(),
                                 Abbreviation = reader["Abbreviation"]?.ToString(),
                                 Headquarters = reader["Headquarters"]?.ToString(),
-                                IsActive = Convert.ToInt32(reader["IsActive"]) == 1
+                                IsActive = Convert.ToBoolean(reader["IsActive"])
                             });
                         }
                     }
                 }
             }
-
             return zones;
         }
 
@@ -675,17 +679,13 @@ namespace RailwayIDCardMaker.Services
 
         #region Settings Operations
 
-        /// <summary>
-        /// Get card settings
-        /// </summary>
         public static CardSettings GetSettings()
         {
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-
-                string sql = "SELECT * FROM Settings LIMIT 1";
-                using (var command = new SQLiteCommand(sql, connection))
+                string sql = "SELECT * FROM Settings";
+                using (var command = new OleDbCommand(sql, connection))
                 {
                     using (var reader = command.ExecuteReader())
                     {
@@ -701,82 +701,135 @@ namespace RailwayIDCardMaker.Services
                                 DefaultZoneName = reader["DefaultZoneName"]?.ToString(),
                                 DefaultUnitCode = reader["DefaultUnitCode"]?.ToString(),
                                 DefaultUnitName = reader["DefaultUnitName"]?.ToString(),
-                                DefaultValidityYears = Convert.ToInt32(reader["DefaultValidityYears"]),
-                                LastSerialNumber = Convert.ToInt32(reader["LastSerialNumber"]),
+                                DefaultValidityYears = reader["DefaultValidityYears"] != DBNull.Value ? Convert.ToInt32(reader["DefaultValidityYears"]) : 5,
+                                LastSerialNumber = reader["LastSerialNumber"] != DBNull.Value ? Convert.ToInt32(reader["LastSerialNumber"]) : 0,
                                 DefaultPrinterName = reader["DefaultPrinterName"]?.ToString(),
-                                PrintFrontAndBack = Convert.ToInt32(reader["PrintFrontAndBack"]) == 1,
-                                UseDuplexPrinting = Convert.ToInt32(reader["UseDuplexPrinting"]) == 1,
+                                PrintFrontAndBack = reader["PrintFrontAndBack"] != DBNull.Value && Convert.ToBoolean(reader["PrintFrontAndBack"]),
+                                UseDuplexPrinting = reader["UseDuplexPrinting"] != DBNull.Value && Convert.ToBoolean(reader["UseDuplexPrinting"]),
                                 LogoPath = reader["LogoPath"]?.ToString(),
-                                OrganizationName = reader["OrganizationName"]?.ToString()
+                                OrganizationName = reader["OrganizationName"]?.ToString() ?? "Indian Railways"
                             };
                         }
                     }
                 }
             }
-
             return new CardSettings();
         }
 
-        /// <summary>
-        /// Save card settings
-        /// </summary>
         public static void SaveSettings(CardSettings settings)
         {
-            using (var connection = new SQLiteConnection(ConnectionString))
+            using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
+                string sql = @"UPDATE Settings SET 
+                    DefaultIssuingAuthority = ?, DefaultIssuingAuthorityDesignation = ?,
+                    DefaultAuthoritySignaturePath = ?, DefaultZoneCode = ?, DefaultZoneName = ?,
+                    DefaultUnitCode = ?, DefaultUnitName = ?, DefaultValidityYears = ?,
+                    LastSerialNumber = ?, DefaultPrinterName = ?, PrintFrontAndBack = ?,
+                    UseDuplexPrinting = ?, LogoPath = ?, OrganizationName = ?, LastUpdated = ?
+                    WHERE Id = ?";
 
-                string sql = @"UPDATE Settings SET
-                    DefaultIssuingAuthority = @authority,
-                    DefaultIssuingAuthorityDesignation = @authoritydesig,
-                    DefaultAuthoritySignaturePath = @authsig,
-                    DefaultZoneCode = @zonecode,
-                    DefaultZoneName = @zonename,
-                    DefaultUnitCode = @unitcode,
-                    DefaultUnitName = @unitname,
-                    DefaultValidityYears = @validity,
-                    LastSerialNumber = @serial,
-                    DefaultPrinterName = @printer,
-                    PrintFrontAndBack = @printboth,
-                    UseDuplexPrinting = @duplex,
-                    LogoPath = @logo,
-                    OrganizationName = @org,
-                    LastUpdated = @updated
-                    WHERE Id = @id";
-
-                using (var command = new SQLiteCommand(sql, connection))
+                using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("@id", settings.Id);
-                    command.Parameters.AddWithValue("@authority", settings.DefaultIssuingAuthority ?? "");
-                    command.Parameters.AddWithValue("@authoritydesig", settings.DefaultIssuingAuthorityDesignation ?? "");
-                    command.Parameters.AddWithValue("@authsig", settings.DefaultAuthoritySignaturePath ?? "");
-                    command.Parameters.AddWithValue("@zonecode", settings.DefaultZoneCode ?? "");
-                    command.Parameters.AddWithValue("@zonename", settings.DefaultZoneName ?? "");
-                    command.Parameters.AddWithValue("@unitcode", settings.DefaultUnitCode ?? "");
-                    command.Parameters.AddWithValue("@unitname", settings.DefaultUnitName ?? "");
-                    command.Parameters.AddWithValue("@validity", settings.DefaultValidityYears);
-                    command.Parameters.AddWithValue("@serial", settings.LastSerialNumber);
-                    command.Parameters.AddWithValue("@printer", settings.DefaultPrinterName ?? "");
-                    command.Parameters.AddWithValue("@printboth", settings.PrintFrontAndBack ? 1 : 0);
-                    command.Parameters.AddWithValue("@duplex", settings.UseDuplexPrinting ? 1 : 0);
-                    command.Parameters.AddWithValue("@logo", settings.LogoPath ?? "");
-                    command.Parameters.AddWithValue("@org", settings.OrganizationName ?? "Indian Railways");
-                    command.Parameters.AddWithValue("@updated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-
+                    command.Parameters.AddWithValue("?", settings.DefaultIssuingAuthority ?? "");
+                    command.Parameters.AddWithValue("?", settings.DefaultIssuingAuthorityDesignation ?? "");
+                    command.Parameters.AddWithValue("?", settings.DefaultAuthoritySignaturePath ?? "");
+                    command.Parameters.AddWithValue("?", settings.DefaultZoneCode ?? "");
+                    command.Parameters.AddWithValue("?", settings.DefaultZoneName ?? "");
+                    command.Parameters.AddWithValue("?", settings.DefaultUnitCode ?? "");
+                    command.Parameters.AddWithValue("?", settings.DefaultUnitName ?? "");
+                    command.Parameters.AddWithValue("?", settings.DefaultValidityYears);
+                    command.Parameters.AddWithValue("?", settings.LastSerialNumber);
+                    command.Parameters.AddWithValue("?", settings.DefaultPrinterName ?? "");
+                    command.Parameters.AddWithValue("?", settings.PrintFrontAndBack);
+                    command.Parameters.AddWithValue("?", settings.UseDuplexPrinting);
+                    command.Parameters.AddWithValue("?", settings.LogoPath ?? "");
+                    command.Parameters.AddWithValue("?", settings.OrganizationName ?? "Indian Railways");
+                    command.Parameters.AddWithValue("?", DateTime.Now);
+                    command.Parameters.AddWithValue("?", settings.Id);
                     command.ExecuteNonQuery();
                 }
             }
         }
 
-        /// <summary>
-        /// Get next serial number for ID card
-        /// </summary>
         public static int GetNextSerialNumber()
         {
-            var settings = GetSettings();
-            settings.LastSerialNumber++;
-            SaveSettings(settings);
-            return settings.LastSerialNumber;
+            using (var connection = new OleDbConnection(ConnectionString))
+            {
+                connection.Open();
+                string sql = "SELECT LastSerialNumber FROM Settings";
+                using (var command = new OleDbCommand(sql, connection))
+                {
+                    int lastSerial = Convert.ToInt32(command.ExecuteScalar() ?? 0);
+                    int nextSerial = lastSerial + 1;
+
+                    // Update the serial number
+                    string updateSql = "UPDATE Settings SET LastSerialNumber = ?";
+                    using (var updateCommand = new OleDbCommand(updateSql, connection))
+                    {
+                        updateCommand.Parameters.AddWithValue("?", nextSerial);
+                        updateCommand.ExecuteNonQuery();
+                    }
+
+                    return nextSerial;
+                }
+            }
+        }
+
+        #endregion
+
+        #region Print Log Operations
+
+        public static void LogPrint(int employeeId, string idCardNumber, string printedBy, string printType)
+        {
+            using (var connection = new OleDbConnection(ConnectionString))
+            {
+                connection.Open();
+                string sql = "INSERT INTO PrintLog (EmployeeId, IDCardNumber, PrintedDate, PrintedBy, PrintType) VALUES (?, ?, ?, ?, ?)";
+                using (var command = new OleDbCommand(sql, connection))
+                {
+                    command.Parameters.AddWithValue("?", employeeId);
+                    command.Parameters.AddWithValue("?", idCardNumber ?? "");
+                    command.Parameters.AddWithValue("?", DateTime.Now);
+                    command.Parameters.AddWithValue("?", printedBy ?? "");
+                    command.Parameters.AddWithValue("?", printType ?? "");
+                    command.ExecuteNonQuery();
+                }
+
+                // Update employee print count
+                string updateSql = "UPDATE Employees SET IsCardPrinted = TRUE, LastPrintedDate = ?, PrintCount = PrintCount + 1 WHERE Id = ?";
+                using (var updateCommand = new OleDbCommand(updateSql, connection))
+                {
+                    updateCommand.Parameters.AddWithValue("?", DateTime.Now);
+                    updateCommand.Parameters.AddWithValue("?", employeeId);
+                    updateCommand.ExecuteNonQuery();
+                }
+            }
+        }
+
+        #endregion
+
+        #region Backup Operations
+
+        public static void BackupDatabase(string backupPath)
+        {
+            if (File.Exists(DatabasePath))
+            {
+                File.Copy(DatabasePath, backupPath, true);
+            }
+        }
+
+        public static void RestoreDatabase(string backupPath)
+        {
+            if (File.Exists(backupPath))
+            {
+                // Close all connections first
+                _connectionString = null;
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
+                File.Copy(backupPath, DatabasePath, true);
+            }
         }
 
         #endregion

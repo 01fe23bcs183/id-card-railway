@@ -81,7 +81,7 @@ namespace RailwayIDCardMaker.Utils
         // ============================================
         // DATABASE
         // ============================================
-        public const string DATABASE_FILENAME = "RailwayIDCards.db";
+        public const string DATABASE_FILENAME = "RailwayIDCards.mdb";
         public const string PHOTOS_FOLDER = "Photos";
         public const string SIGNATURES_FOLDER = "Signatures";
         public const string TEMPLATES_FOLDER = "Templates";
