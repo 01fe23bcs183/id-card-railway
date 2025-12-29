@@ -21,6 +21,8 @@ namespace RailwayIDCardMaker.Forms
             this.pnlFormContainer = new System.Windows.Forms.Panel();
             this.grpCardInfo = new System.Windows.Forms.GroupBox();
             this.btnGenerateID = new System.Windows.Forms.Button();
+            this.txtQRCodeUrl = new System.Windows.Forms.TextBox();
+            this.label21 = new System.Windows.Forms.Label();
             this.txtIDCardNumber = new System.Windows.Forms.TextBox();
             this.label20 = new System.Windows.Forms.Label();
             this.txtIssuingAuthorityDesig = new System.Windows.Forms.TextBox();
@@ -81,9 +83,14 @@ namespace RailwayIDCardMaker.Forms
             this.picCardBack = new System.Windows.Forms.PictureBox();
             this.picCardFront = new System.Windows.Forms.PictureBox();
             this.grpSignature = new System.Windows.Forms.GroupBox();
+            this.btnCameraSignature = new System.Windows.Forms.Button();
             this.btnClearSignature = new System.Windows.Forms.Button();
             this.btnBrowseSignature = new System.Windows.Forms.Button();
             this.picSignature = new System.Windows.Forms.PictureBox();
+            this.grpAuthoritySignature = new System.Windows.Forms.GroupBox();
+            this.btnClearAuthoritySignature = new System.Windows.Forms.Button();
+            this.btnBrowseAuthoritySignature = new System.Windows.Forms.Button();
+            this.picAuthoritySignature = new System.Windows.Forms.PictureBox();
             this.grpPhoto = new System.Windows.Forms.GroupBox();
             this.btnClearPhoto = new System.Windows.Forms.Button();
             this.btnBrowsePhoto = new System.Windows.Forms.Button();
@@ -105,6 +112,8 @@ namespace RailwayIDCardMaker.Forms
             ((System.ComponentModel.ISupportInitialize)(this.picCardFront)).BeginInit();
             this.grpSignature.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.picSignature)).BeginInit();
+            this.grpAuthoritySignature.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.picAuthoritySignature)).BeginInit();
             this.grpPhoto.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.picPhoto)).BeginInit();
             this.SuspendLayout();
@@ -489,6 +498,8 @@ namespace RailwayIDCardMaker.Forms
             // grpCardInfo
             // 
             this.grpCardInfo.Controls.Add(this.btnGenerateID);
+            this.grpCardInfo.Controls.Add(this.txtQRCodeUrl);
+            this.grpCardInfo.Controls.Add(this.label21);
             this.grpCardInfo.Controls.Add(this.txtIDCardNumber);
             this.grpCardInfo.Controls.Add(this.label20);
             this.grpCardInfo.Controls.Add(this.txtIssuingAuthorityDesig);
@@ -502,7 +513,7 @@ namespace RailwayIDCardMaker.Forms
             this.grpCardInfo.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
             this.grpCardInfo.Location = new System.Drawing.Point(13, 435);
             this.grpCardInfo.Name = "grpCardInfo";
-            this.grpCardInfo.Size = new System.Drawing.Size(520, 140);
+            this.grpCardInfo.Size = new System.Drawing.Size(520, 170);
             this.grpCardInfo.TabIndex = 3;
             this.grpCardInfo.TabStop = false;
             this.grpCardInfo.Text = "ID Card Information";
@@ -596,6 +607,24 @@ namespace RailwayIDCardMaker.Forms
             this.txtIDCardNumber.Size = new System.Drawing.Size(180, 26);
             this.txtIDCardNumber.TabIndex = 5;
             // 
+            // label21 - QR URL
+            // 
+            this.label21.AutoSize = true;
+            this.label21.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.label21.Location = new System.Drawing.Point(10, 115);
+            this.label21.Name = "label21";
+            this.label21.Size = new System.Drawing.Size(52, 15);
+            this.label21.Text = "QR URL:";
+            // 
+            // txtQRCodeUrl
+            // 
+            this.txtQRCodeUrl.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.txtQRCodeUrl.Location = new System.Drawing.Point(110, 112);
+            this.txtQRCodeUrl.Name = "txtQRCodeUrl";
+            this.txtQRCodeUrl.Size = new System.Drawing.Size(400, 23);
+            this.txtQRCodeUrl.TabIndex = 7;
+            this.txtQRCodeUrl.TextChanged += new System.EventHandler(this.txtQRCodeUrl_TextChanged);
+            // 
             // btnGenerateID
             // 
             this.btnGenerateID.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(0)))), ((int)(((byte)(102)))), ((int)(((byte)(51)))));
@@ -616,6 +645,7 @@ namespace RailwayIDCardMaker.Forms
             this.pnlPreview.Controls.Add(this.grpRemarks);
             this.pnlPreview.Controls.Add(this.pnlButtons);
             this.pnlPreview.Controls.Add(this.grpCardPreview);
+            this.pnlPreview.Controls.Add(this.grpAuthoritySignature);
             this.pnlPreview.Controls.Add(this.grpSignature);
             this.pnlPreview.Controls.Add(this.grpPhoto);
             this.pnlPreview.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -683,15 +713,30 @@ namespace RailwayIDCardMaker.Forms
             // 
             // grpSignature
             // 
+            this.grpSignature.Controls.Add(this.btnCameraSignature);
             this.grpSignature.Controls.Add(this.btnClearSignature);
             this.grpSignature.Controls.Add(this.btnBrowseSignature);
             this.grpSignature.Controls.Add(this.picSignature);
             this.grpSignature.Location = new System.Drawing.Point(200, 10);
             this.grpSignature.Name = "grpSignature";
-            this.grpSignature.Size = new System.Drawing.Size(180, 100);
+            this.grpSignature.Size = new System.Drawing.Size(180, 130);
             this.grpSignature.TabIndex = 1;
             this.grpSignature.TabStop = false;
             this.grpSignature.Text = "Signature";
+            // 
+            // btnCameraSignature
+            // 
+            this.btnCameraSignature.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(0)))), ((int)(((byte)(51)))), ((int)(((byte)(102)))));
+            this.btnCameraSignature.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnCameraSignature.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+            this.btnCameraSignature.ForeColor = System.Drawing.Color.White;
+            this.btnCameraSignature.Location = new System.Drawing.Point(15, 95);
+            this.btnCameraSignature.Name = "btnCameraSignature";
+            this.btnCameraSignature.Size = new System.Drawing.Size(150, 25);
+            this.btnCameraSignature.TabIndex = 3;
+            this.btnCameraSignature.Text = "Camera";
+            this.btnCameraSignature.UseVisualStyleBackColor = false;
+            this.btnCameraSignature.Click += new System.EventHandler(this.btnCameraSignature_Click);
             // 
             // picSignature
             // 
@@ -722,6 +767,47 @@ namespace RailwayIDCardMaker.Forms
             this.btnClearSignature.Text = "Clear";
             this.btnClearSignature.Click += new System.EventHandler(this.btnClearSignature_Click);
             // 
+            // grpAuthoritySignature
+            // 
+            this.grpAuthoritySignature.Controls.Add(this.btnClearAuthoritySignature);
+            this.grpAuthoritySignature.Controls.Add(this.btnBrowseAuthoritySignature);
+            this.grpAuthoritySignature.Controls.Add(this.picAuthoritySignature);
+            this.grpAuthoritySignature.Location = new System.Drawing.Point(200, 145);
+            this.grpAuthoritySignature.Name = "grpAuthoritySignature";
+            this.grpAuthoritySignature.Size = new System.Drawing.Size(180, 100);
+            this.grpAuthoritySignature.TabIndex = 2;
+            this.grpAuthoritySignature.TabStop = false;
+            this.grpAuthoritySignature.Text = "Authority Signature";
+            // 
+            // picAuthoritySignature
+            // 
+            this.picAuthoritySignature.BackColor = System.Drawing.Color.White;
+            this.picAuthoritySignature.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.picAuthoritySignature.Location = new System.Drawing.Point(15, 20);
+            this.picAuthoritySignature.Name = "picAuthoritySignature";
+            this.picAuthoritySignature.Size = new System.Drawing.Size(150, 40);
+            this.picAuthoritySignature.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
+            this.picAuthoritySignature.TabIndex = 0;
+            this.picAuthoritySignature.TabStop = false;
+            // 
+            // btnBrowseAuthoritySignature
+            // 
+            this.btnBrowseAuthoritySignature.Location = new System.Drawing.Point(15, 65);
+            this.btnBrowseAuthoritySignature.Name = "btnBrowseAuthoritySignature";
+            this.btnBrowseAuthoritySignature.Size = new System.Drawing.Size(70, 25);
+            this.btnBrowseAuthoritySignature.TabIndex = 1;
+            this.btnBrowseAuthoritySignature.Text = "Browse...";
+            this.btnBrowseAuthoritySignature.Click += new System.EventHandler(this.btnBrowseAuthoritySignature_Click);
+            // 
+            // btnClearAuthoritySignature
+            // 
+            this.btnClearAuthoritySignature.Location = new System.Drawing.Point(95, 65);
+            this.btnClearAuthoritySignature.Name = "btnClearAuthoritySignature";
+            this.btnClearAuthoritySignature.Size = new System.Drawing.Size(70, 25);
+            this.btnClearAuthoritySignature.TabIndex = 2;
+            this.btnClearAuthoritySignature.Text = "Clear";
+            this.btnClearAuthoritySignature.Click += new System.EventHandler(this.btnClearAuthoritySignature_Click);
+            // 
             // grpCardPreview
             // 
             this.grpCardPreview.Controls.Add(this.lblBack);
@@ -729,7 +815,7 @@ namespace RailwayIDCardMaker.Forms
             this.grpCardPreview.Controls.Add(this.picCardBack);
             this.grpCardPreview.Controls.Add(this.picCardFront);
             this.grpCardPreview.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
-            this.grpCardPreview.Location = new System.Drawing.Point(13, 220);
+            this.grpCardPreview.Location = new System.Drawing.Point(13, 255);
             this.grpCardPreview.Name = "grpCardPreview";
             this.grpCardPreview.Size = new System.Drawing.Size(520, 280);
             this.grpCardPreview.TabIndex = 2;
@@ -783,7 +869,7 @@ namespace RailwayIDCardMaker.Forms
             this.pnlButtons.Controls.Add(this.btnNew);
             this.pnlButtons.Controls.Add(this.btnSaveAndPrint);
             this.pnlButtons.Controls.Add(this.btnSave);
-            this.pnlButtons.Location = new System.Drawing.Point(13, 560);
+            this.pnlButtons.Location = new System.Drawing.Point(13, 595);
             this.pnlButtons.Name = "pnlButtons";
             this.pnlButtons.Size = new System.Drawing.Size(520, 45);
             this.pnlButtons.TabIndex = 3;
@@ -856,7 +942,7 @@ namespace RailwayIDCardMaker.Forms
             // grpRemarks
             // 
             this.grpRemarks.Controls.Add(this.txtRemarks);
-            this.grpRemarks.Location = new System.Drawing.Point(13, 505);
+            this.grpRemarks.Location = new System.Drawing.Point(13, 540);
             this.grpRemarks.Name = "grpRemarks";
             this.grpRemarks.Size = new System.Drawing.Size(520, 50);
             this.grpRemarks.TabIndex = 4;
@@ -901,6 +987,8 @@ namespace RailwayIDCardMaker.Forms
             ((System.ComponentModel.ISupportInitialize)(this.picCardFront)).EndInit();
             this.grpSignature.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.picSignature)).EndInit();
+            this.grpAuthoritySignature.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.picAuthoritySignature)).EndInit();
             this.grpPhoto.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.picPhoto)).EndInit();
             this.ResumeLayout(false);
@@ -962,6 +1050,8 @@ namespace RailwayIDCardMaker.Forms
         private System.Windows.Forms.Label label19;
         private System.Windows.Forms.TextBox txtIDCardNumber;
         private System.Windows.Forms.Label label20;
+        private System.Windows.Forms.TextBox txtQRCodeUrl;
+        private System.Windows.Forms.Label label21;
         private System.Windows.Forms.Button btnGenerateID;
         private System.Windows.Forms.PictureBox picPhoto;
         private System.Windows.Forms.Button btnBrowsePhoto;
@@ -970,6 +1060,11 @@ namespace RailwayIDCardMaker.Forms
         private System.Windows.Forms.PictureBox picSignature;
         private System.Windows.Forms.Button btnBrowseSignature;
         private System.Windows.Forms.Button btnClearSignature;
+        private System.Windows.Forms.Button btnCameraSignature;
+        private System.Windows.Forms.GroupBox grpAuthoritySignature;
+        private System.Windows.Forms.PictureBox picAuthoritySignature;
+        private System.Windows.Forms.Button btnBrowseAuthoritySignature;
+        private System.Windows.Forms.Button btnClearAuthoritySignature;
         private System.Windows.Forms.PictureBox picCardFront;
         private System.Windows.Forms.PictureBox picCardBack;
         private System.Windows.Forms.Label lblFront;

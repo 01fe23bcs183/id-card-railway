@@ -145,5 +145,6 @@ namespace RailwayIDCardMaker.Utils
         public const string APP_NAME = "Railway Employee ID Card Maker";
         public const string APP_VERSION = "1.0.0";
         public const string APP_AUTHOR = "Indian Railways";
+
     }
 }

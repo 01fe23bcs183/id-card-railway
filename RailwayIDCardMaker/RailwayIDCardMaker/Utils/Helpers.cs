@@ -242,11 +242,14 @@ namespace RailwayIDCardMaker.Utils
         }
 
         /// <summary>
-        /// Get application data directory
+        /// Get application data directory (in Documents folder)
         /// </summary>
         public static string GetAppDataDirectory()
         {
-            string appPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            // Use Documents folder for easier access
+            string documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            string appPath = Path.Combine(documentsPath, "RailwayIDCardMaker");
+            EnsureDirectoryExists(appPath);
             return appPath;
         }
 
@@ -304,6 +307,14 @@ namespace RailwayIDCardMaker.Utils
         public static string GenerateSignatureFilename(string employeeId)
         {
             return $"sig_{employeeId}_{DateTime.Now:yyyyMMddHHmmss}.png";
+        }
+
+        /// <summary>
+        /// Generate unique filename for authority signature
+        /// </summary>
+        public static string GenerateAuthoritySignatureFilename(string employeeId)
+        {
+            return $"authsig_{employeeId}_{DateTime.Now:yyyyMMddHHmmss}.png";
         }
 
         /// <summary>

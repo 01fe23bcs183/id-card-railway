@@ -115,6 +115,21 @@ namespace RailwayIDCardMaker.Forms
 
         private void OpenEmployeeForm(Employee employee)
         {
+            // Always create a fresh form when editing to ensure proper data loading
+            if (employee != null)
+            {
+                // Dispose existing form if any
+                try
+                {
+                    if (_employeeForm != null && !_employeeForm.IsDisposed)
+                    {
+                        _employeeForm.Close();
+                    }
+                }
+                catch { }
+                _employeeForm = null;
+            }
+
             if (_employeeForm == null || _employeeForm.IsDisposed)
             {
                 _employeeForm = new EmployeeForm();
@@ -122,11 +137,27 @@ namespace RailwayIDCardMaker.Forms
                 _employeeForm.EmployeeSaved += EmployeeForm_EmployeeSaved;
             }
 
-            if (employee != null) _employeeForm.LoadEmployee(employee);
-            else _employeeForm.NewEmployee();
+            // IMPORTANT: Load employee data BEFORE showing the form
+            // This sets _pendingEmployee which will be used in EmployeeForm_Load
+            if (employee != null)
+            {
+                _employeeForm.LoadEmployee(employee);
+            }
 
+            // Now show the form in the panel
             ShowFormInPanel(_employeeForm);
-            UpdateStatus("Creating new ID Card...");
+
+            // Update status
+            if (employee != null)
+            {
+                UpdateStatus($"Editing: {employee.Name}");
+            }
+            else
+            {
+                // Only call NewEmployee if no employee was passed
+                _employeeForm.NewEmployee();
+                UpdateStatus("Creating new ID Card...");
+            }
         }
 
         private void EmployeeForm_EmployeeSaved(object sender, Employee employee)

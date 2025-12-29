@@ -9,16 +9,13 @@ using RailwayIDCardMaker.Utils;
 namespace RailwayIDCardMaker.Services
 {
     /// <summary>
-    /// Database service for Microsoft Access operations
+    /// Database service for Microsoft Access operations - Simplified version without boolean columns
     /// </summary>
     public static class DatabaseService
     {
         private static string _connectionString;
         private static string _dbPath;
 
-        /// <summary>
-        /// Get database file path
-        /// </summary>
         public static string DatabasePath
         {
             get
@@ -31,38 +28,30 @@ namespace RailwayIDCardMaker.Services
             }
         }
 
-        /// <summary>
-        /// Get database connection string (JET provider for Windows 7 compatibility)
-        /// </summary>
         public static string ConnectionString
         {
             get
             {
                 if (string.IsNullOrEmpty(_connectionString))
                 {
-                    // Use JET provider (built into Windows 7/8/10 32-bit)
                     _connectionString = $"Provider=Microsoft.Jet.OLEDB.4.0;Data Source={DatabasePath};";
                 }
                 return _connectionString;
             }
         }
 
-        /// <summary>
-        /// Initialize database and create tables if not exist
-        /// </summary>
         public static void InitializeDatabase()
         {
-            // Create database file if not exists
             if (!File.Exists(DatabasePath))
             {
                 CreateAccessDatabase();
             }
 
-            // Create tables
             using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
                 CreateTables(connection);
+                MigrateDatabase(connection); // Add missing columns to existing tables
                 InsertDefaultUser(connection);
                 InsertDefaultSettings(connection);
                 InsertDefaultZones(connection);
@@ -71,15 +60,12 @@ namespace RailwayIDCardMaker.Services
 
         private static void CreateAccessDatabase()
         {
-            // Ensure directory exists
             string dir = Path.GetDirectoryName(DatabasePath);
             if (!Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
             }
 
-            // Create Access .mdb database using ADOX Catalog (COM)
-            // JET 4.0 provider is built into Windows 7
             Type catalogType = Type.GetTypeFromProgID("ADOX.Catalog");
             if (catalogType != null)
             {
@@ -98,148 +84,21 @@ namespace RailwayIDCardMaker.Services
             }
             else
             {
-                throw new Exception("Cannot create database. ADOX is not available on this system.");
-            }
-        }
-
-        private static void CreateTables(OleDbConnection connection)
-        {
-            // Create Users table
-            if (!TableExists(connection, "Users"))
-            {
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE Users (
-                        Id COUNTER PRIMARY KEY,
-                        Username TEXT(50) NOT NULL,
-                        PasswordHash TEXT(255) NOT NULL,
-                        FullName TEXT(100),
-                        Designation TEXT(100),
-                        Role TEXT(20) DEFAULT 'Operator',
-                        IsActive YESNO DEFAULT TRUE,
-                        CreatedDate DATETIME,
-                        LastLoginDate DATETIME
-                    )");
-                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_Username ON Users (Username)");
-            }
-
-            // Create Employees table
-            if (!TableExists(connection, "Employees"))
-            {
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE Employees (
-                        Id COUNTER PRIMARY KEY,
-                        IDCardNumber TEXT(20),
-                        Name TEXT(100) NOT NULL,
-                        FatherName TEXT(100),
-                        DateOfBirth DATETIME,
-                        BloodGroup TEXT(10),
-                        Gender TEXT(10),
-                        Address MEMO,
-                        MobileNumber TEXT(15),
-                        AadhaarNumber TEXT(20),
-                        Designation TEXT(100),
-                        Department TEXT(100),
-                        PlaceOfPosting TEXT(100),
-                        ZoneCode TEXT(10),
-                        ZoneName TEXT(100),
-                        UnitCode TEXT(10),
-                        UnitName TEXT(100),
-                        PFNumber TEXT(20),
-                        DateOfJoining DATETIME,
-                        DateOfRetirement DATETIME,
-                        DateOfIssue DATETIME,
-                        ValidityDate DATETIME,
-                        IssuingAuthority TEXT(100),
-                        IssuingAuthorityDesignation TEXT(100),
-                        SerialNumber LONG,
-                        PhotoPath TEXT(255),
-                        SignaturePath TEXT(255),
-                        AuthoritySignaturePath TEXT(255),
-                        IsActive YESNO DEFAULT TRUE,
-                        IsCardPrinted YESNO DEFAULT FALSE,
-                        LastPrintedDate DATETIME,
-                        PrintCount LONG DEFAULT 0,
-                        CreatedDate DATETIME,
-                        ModifiedDate DATETIME,
-                        CreatedBy TEXT(50),
-                        ModifiedBy TEXT(50),
-                        Remarks MEMO
-                    )");
-                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_IDCardNumber ON Employees (IDCardNumber)");
-            }
-
-            // Create Zones table
-            if (!TableExists(connection, "Zones"))
-            {
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE Zones (
-                        Id COUNTER PRIMARY KEY,
-                        Code TEXT(10) NOT NULL,
-                        Name TEXT(100) NOT NULL,
-                        Abbreviation TEXT(20),
-                        Headquarters TEXT(100),
-                        IsActive YESNO DEFAULT TRUE
-                    )");
-                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_ZoneCode ON Zones (Code)");
-            }
-
-            // Create Units table
-            if (!TableExists(connection, "Units"))
-            {
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE Units (
-                        Id COUNTER PRIMARY KEY,
-                        Code TEXT(10) NOT NULL,
-                        Name TEXT(100) NOT NULL,
-                        ZoneCode TEXT(10),
-                        IsActive YESNO DEFAULT TRUE
-                    )");
-            }
-
-            // Create Settings table
-            if (!TableExists(connection, "Settings"))
-            {
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE Settings (
-                        Id COUNTER PRIMARY KEY,
-                        DefaultIssuingAuthority TEXT(100),
-                        DefaultIssuingAuthorityDesignation TEXT(100),
-                        DefaultAuthoritySignaturePath TEXT(255),
-                        DefaultZoneCode TEXT(10),
-                        DefaultZoneName TEXT(100),
-                        DefaultUnitCode TEXT(10),
-                        DefaultUnitName TEXT(100),
-                        DefaultValidityYears LONG DEFAULT 5,
-                        LastSerialNumber LONG DEFAULT 0,
-                        DefaultPrinterName TEXT(100),
-                        PrintFrontAndBack YESNO DEFAULT TRUE,
-                        UseDuplexPrinting YESNO DEFAULT FALSE,
-                        LogoPath TEXT(255),
-                        OrganizationName TEXT(100) DEFAULT 'Indian Railways',
-                        LastUpdated DATETIME
-                    )");
-            }
-
-            // Create PrintLog table
-            if (!TableExists(connection, "PrintLog"))
-            {
-                ExecuteNonQuery(connection, @"
-                    CREATE TABLE PrintLog (
-                        Id COUNTER PRIMARY KEY,
-                        EmployeeId LONG,
-                        IDCardNumber TEXT(20),
-                        PrintedDate DATETIME,
-                        PrintedBy TEXT(50),
-                        PrintType TEXT(20)
-                    )");
+                throw new Exception("Cannot create Access database. ADOX not available.");
             }
         }
 
         private static bool TableExists(OleDbConnection connection, string tableName)
         {
-            DataTable schema = connection.GetOleDbSchemaTable(OleDbSchemaGuid.Tables,
-                new object[] { null, null, tableName, "TABLE" });
-            return schema.Rows.Count > 0;
+            var schema = connection.GetSchema("Tables");
+            foreach (DataRow row in schema.Rows)
+            {
+                if (row["TABLE_NAME"].ToString().Equals(tableName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void ExecuteNonQuery(OleDbConnection connection, string sql)
@@ -250,26 +109,228 @@ namespace RailwayIDCardMaker.Services
             }
         }
 
+        /// <summary>
+        /// Migrate database by adding missing columns
+        /// </summary>
+        private static void MigrateDatabase(OleDbConnection connection)
+        {
+            // Get existing columns in Employees table
+            var existingColumns = new List<string>();
+            try
+            {
+                var schema = connection.GetOleDbSchemaTable(OleDbSchemaGuid.Columns,
+                    new object[] { null, null, "Employees", null });
+                if (schema != null)
+                {
+                    foreach (DataRow row in schema.Rows)
+                    {
+                        existingColumns.Add(row["COLUMN_NAME"].ToString().ToLower());
+                    }
+                }
+            }
+            catch { }
+
+            // Define all expected columns with their types
+            var expectedColumns = new Dictionary<string, string>
+            {
+                { "IDCardNumber", "TEXT(50)" },
+                { "Name", "TEXT(100)" },
+                { "FatherName", "TEXT(100)" },
+                { "DateOfBirth", "DATETIME" },
+                { "BloodGroup", "TEXT(10)" },
+                { "Gender", "TEXT(10)" },
+                { "Address", "MEMO" },
+                { "MobileNumber", "TEXT(20)" },
+                { "AadhaarNumber", "TEXT(20)" },
+                { "Designation", "TEXT(100)" },
+                { "Department", "TEXT(100)" },
+                { "PlaceOfPosting", "TEXT(100)" },
+                { "ZoneCode", "TEXT(10)" },
+                { "ZoneName", "TEXT(100)" },
+                { "UnitCode", "TEXT(20)" },
+                { "UnitName", "TEXT(100)" },
+                { "PFNumber", "TEXT(50)" },
+                { "DateOfJoining", "DATETIME" },
+                { "DateOfRetirement", "DATETIME" },
+                { "DateOfIssue", "DATETIME" },
+                { "ValidityDate", "DATETIME" },
+                { "IssuingAuthority", "TEXT(100)" },
+                { "IssuingAuthorityDesignation", "TEXT(100)" },
+                { "QRCodeUrl", "TEXT(255)" },
+                { "SerialNumber", "LONG" },
+                { "PhotoPath", "TEXT(255)" },
+                { "SignaturePath", "TEXT(255)" },
+                { "AuthoritySignaturePath", "TEXT(255)" },
+                { "LastPrintedDate", "DATETIME" },
+                { "PrintCount", "LONG" },
+                { "CreatedDate", "DATETIME" },
+                { "ModifiedDate", "DATETIME" },
+                { "CreatedBy", "TEXT(50)" },
+                { "ModifiedBy", "TEXT(50)" },
+                { "Remarks", "MEMO" }
+            };
+
+            // Add missing columns
+            foreach (var col in expectedColumns)
+            {
+                if (!existingColumns.Contains(col.Key.ToLower()))
+                {
+                    try
+                    {
+                        string sql = $"ALTER TABLE Employees ADD COLUMN [{col.Key}] {col.Value}";
+                        ExecuteNonQuery(connection, sql);
+                    }
+                    catch
+                    {
+                        // Column might already exist or other issue, ignore
+                    }
+                }
+            }
+        }
+
+        private static void CreateTables(OleDbConnection connection)
+        {
+            // Users table - NO BOOLEAN COLUMNS
+            if (!TableExists(connection, "Users"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Users (
+                        Id COUNTER PRIMARY KEY,
+                        Username TEXT(50) NOT NULL,
+                        PasswordHash TEXT(255) NOT NULL,
+                        FullName TEXT(100),
+                        Designation TEXT(100),
+                        Role TEXT(20),
+                        CreatedDate DATETIME,
+                        LastLoginDate DATETIME
+                    )");
+                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_Username ON Users (Username)");
+            }
+
+            // Employees table - NO BOOLEAN COLUMNS
+            if (!TableExists(connection, "Employees"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Employees (
+                        Id COUNTER PRIMARY KEY,
+                        IDCardNumber TEXT(50),
+                        Name TEXT(100) NOT NULL,
+                        FatherName TEXT(100),
+                        DateOfBirth DATETIME,
+                        BloodGroup TEXT(10),
+                        Gender TEXT(10),
+                        Address MEMO,
+                        MobileNumber TEXT(20),
+                        AadhaarNumber TEXT(20),
+                        Designation TEXT(100),
+                        Department TEXT(100),
+                        PlaceOfPosting TEXT(100),
+                        ZoneCode TEXT(10),
+                        ZoneName TEXT(100),
+                        UnitCode TEXT(20),
+                        UnitName TEXT(100),
+                        PFNumber TEXT(50),
+                        DateOfJoining DATETIME,
+                        DateOfRetirement DATETIME,
+                        DateOfIssue DATETIME,
+                        ValidityDate DATETIME,
+                        IssuingAuthority TEXT(100),
+                        IssuingAuthorityDesignation TEXT(100),
+                        QRCodeUrl TEXT(255),
+                        SerialNumber LONG,
+                        PhotoPath TEXT(255),
+                        SignaturePath TEXT(255),
+                        AuthoritySignaturePath TEXT(255),
+                        LastPrintedDate DATETIME,
+                        PrintCount LONG,
+                        CreatedDate DATETIME,
+                        ModifiedDate DATETIME,
+                        CreatedBy TEXT(50),
+                        ModifiedBy TEXT(50),
+                        Remarks MEMO
+                    )");
+                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_IDCardNumber ON Employees (IDCardNumber)");
+            }
+
+            // Zones table - NO BOOLEAN COLUMNS
+            if (!TableExists(connection, "Zones"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Zones (
+                        Id COUNTER PRIMARY KEY,
+                        Code TEXT(10) NOT NULL,
+                        Name TEXT(100) NOT NULL,
+                        Abbreviation TEXT(20),
+                        Headquarters TEXT(100)
+                    )");
+                ExecuteNonQuery(connection, "CREATE UNIQUE INDEX idx_ZoneCode ON Zones (Code)");
+            }
+
+            // Units table
+            if (!TableExists(connection, "Units"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Units (
+                        Id COUNTER PRIMARY KEY,
+                        Code TEXT(10) NOT NULL,
+                        Name TEXT(100) NOT NULL,
+                        ZoneCode TEXT(10)
+                    )");
+            }
+
+            // Settings table - NO BOOLEAN COLUMNS
+            if (!TableExists(connection, "Settings"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE Settings (
+                        Id COUNTER PRIMARY KEY,
+                        DefaultZoneCode TEXT(10),
+                        DefaultZoneName TEXT(100),
+                        DefaultUnitCode TEXT(10),
+                        DefaultUnitName TEXT(100),
+                        DefaultValidityYears LONG,
+                        LastSerialNumber LONG,
+                        DefaultPrinterName TEXT(100),
+                        LogoPath TEXT(255),
+                        OrganizationName TEXT(100),
+                        LastUpdated DATETIME
+                    )");
+            }
+
+            // PrintLog table
+            if (!TableExists(connection, "PrintLog"))
+            {
+                ExecuteNonQuery(connection, @"
+                    CREATE TABLE PrintLog (
+                        Id COUNTER PRIMARY KEY,
+                        EmployeeId LONG,
+                        IDCardNumber TEXT(50),
+                        PrintedDate DATETIME,
+                        PrintedBy TEXT(50),
+                        PrintType TEXT(20)
+                    )");
+            }
+        }
+
         private static void InsertDefaultUser(OleDbConnection connection)
         {
             string checkSql = "SELECT COUNT(*) FROM Users WHERE Username = ?";
             using (var command = new OleDbCommand(checkSql, connection))
             {
-                command.Parameters.AddWithValue("?", Constants.DEFAULT_USERNAME);
+                command.Parameters.Add("?", OleDbType.VarChar, 50).Value = Constants.DEFAULT_USERNAME;
                 int count = Convert.ToInt32(command.ExecuteScalar());
 
                 if (count == 0)
                 {
-                    string insertSql = @"INSERT INTO Users (Username, PasswordHash, FullName, Designation, Role, IsActive, CreatedDate)
-                                        VALUES (?, ?, ?, ?, ?, TRUE, ?)";
+                    string insertSql = "INSERT INTO Users (Username, PasswordHash, FullName, Designation, Role, CreatedDate) VALUES (?, ?, ?, ?, ?, ?)";
                     using (var insertCommand = new OleDbCommand(insertSql, connection))
                     {
-                        insertCommand.Parameters.AddWithValue("?", Constants.DEFAULT_USERNAME);
-                        insertCommand.Parameters.AddWithValue("?", Helpers.HashPassword(Constants.DEFAULT_PASSWORD));
-                        insertCommand.Parameters.AddWithValue("?", "Administrator");
-                        insertCommand.Parameters.AddWithValue("?", "System Admin");
-                        insertCommand.Parameters.AddWithValue("?", UserRoles.Admin);
-                        insertCommand.Parameters.AddWithValue("?", DateTime.Now);
+                        insertCommand.Parameters.Add("?", OleDbType.VarChar, 50).Value = "admin";
+                        insertCommand.Parameters.Add("?", OleDbType.VarChar, 255).Value = Helpers.HashPassword("admin123");
+                        insertCommand.Parameters.Add("?", OleDbType.VarChar, 100).Value = "Administrator";
+                        insertCommand.Parameters.Add("?", OleDbType.VarChar, 100).Value = "System Admin";
+                        insertCommand.Parameters.Add("?", OleDbType.VarChar, 20).Value = "Admin";
+                        insertCommand.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
                         insertCommand.ExecuteNonQuery();
                     }
                 }
@@ -285,14 +346,13 @@ namespace RailwayIDCardMaker.Services
 
                 if (count == 0)
                 {
-                    string insertSql = @"INSERT INTO Settings (OrganizationName, DefaultValidityYears, LastSerialNumber, PrintFrontAndBack, UseDuplexPrinting, LastUpdated)
-                                        VALUES (?, ?, ?, TRUE, FALSE, ?)";
+                    string insertSql = "INSERT INTO Settings (OrganizationName, DefaultValidityYears, LastSerialNumber, LastUpdated) VALUES (?, ?, ?, ?)";
                     using (var insertCommand = new OleDbCommand(insertSql, connection))
                     {
-                        insertCommand.Parameters.AddWithValue("?", "Indian Railways");
-                        insertCommand.Parameters.AddWithValue("?", 5);
-                        insertCommand.Parameters.AddWithValue("?", 0);
-                        insertCommand.Parameters.AddWithValue("?", DateTime.Now);
+                        insertCommand.Parameters.Add("?", OleDbType.VarChar, 100).Value = "Indian Railways";
+                        insertCommand.Parameters.Add("?", OleDbType.Integer).Value = 5;
+                        insertCommand.Parameters.Add("?", OleDbType.Integer).Value = 0;
+                        insertCommand.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
                         insertCommand.ExecuteNonQuery();
                     }
                 }
@@ -310,15 +370,15 @@ namespace RailwayIDCardMaker.Services
                 {
                     var zones = new[]
                     {
-                        ("01", "Central Railway", "CR", "Mumbai"),
-                        ("02", "Eastern Railway", "ER", "Kolkata"),
-                        ("03", "East Central Railway", "ECR", "Hajipur"),
-                        ("04", "East Coast Railway", "ECoR", "Bhubaneswar"),
-                        ("05", "Northern Railway", "NR", "New Delhi"),
-                        ("06", "North Central Railway", "NCR", "Prayagraj"),
-                        ("07", "North Eastern Railway", "NER", "Gorakhpur"),
-                        ("08", "Northeast Frontier Railway", "NFR", "Guwahati"),
-                        ("09", "North Western Railway", "NWR", "Jaipur"),
+                        ("1", "Central Railway", "CR", "Mumbai"),
+                        ("2", "Eastern Railway", "ER", "Kolkata"),
+                        ("3", "East Central Railway", "ECR", "Hajipur"),
+                        ("4", "East Coast Railway", "ECoR", "Bhubaneswar"),
+                        ("5", "Northern Railway", "NR", "New Delhi"),
+                        ("6", "North Central Railway", "NCR", "Prayagraj"),
+                        ("7", "North Eastern Railway", "NER", "Gorakhpur"),
+                        ("8", "Northeast Frontier Railway", "NFR", "Guwahati"),
+                        ("9", "North Western Railway", "NWR", "Jaipur"),
                         ("10", "Southern Railway", "SR", "Chennai"),
                         ("11", "South Central Railway", "SCR", "Secunderabad"),
                         ("12", "South Eastern Railway", "SER", "Kolkata"),
@@ -331,13 +391,13 @@ namespace RailwayIDCardMaker.Services
 
                     foreach (var zone in zones)
                     {
-                        string insertSql = "INSERT INTO Zones (Code, Name, Abbreviation, Headquarters, IsActive) VALUES (?, ?, ?, ?, TRUE)";
+                        string insertSql = "INSERT INTO Zones (Code, Name, Abbreviation, Headquarters) VALUES (?, ?, ?, ?)";
                         using (var insertCommand = new OleDbCommand(insertSql, connection))
                         {
-                            insertCommand.Parameters.AddWithValue("?", zone.Item1);
-                            insertCommand.Parameters.AddWithValue("?", zone.Item2);
-                            insertCommand.Parameters.AddWithValue("?", zone.Item3);
-                            insertCommand.Parameters.AddWithValue("?", zone.Item4);
+                            insertCommand.Parameters.Add("?", OleDbType.VarChar, 10).Value = zone.Item1;
+                            insertCommand.Parameters.Add("?", OleDbType.VarChar, 100).Value = zone.Item2;
+                            insertCommand.Parameters.Add("?", OleDbType.VarChar, 20).Value = zone.Item3;
+                            insertCommand.Parameters.Add("?", OleDbType.VarChar, 100).Value = zone.Item4;
                             insertCommand.ExecuteNonQuery();
                         }
                     }
@@ -352,11 +412,11 @@ namespace RailwayIDCardMaker.Services
             using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-                string sql = "SELECT * FROM Users WHERE Username = ? AND PasswordHash = ? AND IsActive = TRUE";
+                string sql = "SELECT * FROM Users WHERE Username = ? AND PasswordHash = ?";
                 using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("?", username);
-                    command.Parameters.AddWithValue("?", passwordHash);
+                    command.Parameters.Add("?", OleDbType.VarChar, 50).Value = username;
+                    command.Parameters.Add("?", OleDbType.VarChar, 255).Value = passwordHash;
 
                     using (var reader = command.ExecuteReader())
                     {
@@ -380,8 +440,8 @@ namespace RailwayIDCardMaker.Services
                 string sql = "UPDATE Users SET LastLoginDate = ? WHERE Id = ?";
                 using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("?", DateTime.Now);
-                    command.Parameters.AddWithValue("?", userId);
+                    command.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
+                    command.Parameters.Add("?", OleDbType.Integer).Value = userId;
                     command.ExecuteNonQuery();
                 }
             }
@@ -395,11 +455,28 @@ namespace RailwayIDCardMaker.Services
                 string sql = "UPDATE Users SET PasswordHash = ? WHERE Id = ?";
                 using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("?", newPasswordHash);
-                    command.Parameters.AddWithValue("?", userId);
+                    command.Parameters.Add("?", OleDbType.VarChar, 255).Value = newPasswordHash;
+                    command.Parameters.Add("?", OleDbType.Integer).Value = userId;
                     return command.ExecuteNonQuery() > 0;
                 }
             }
+        }
+
+        public static void UpdateUserPassword(int userId, string newPassword)
+        {
+            string passwordHash = Helpers.HashPassword(newPassword);
+            ChangePassword(userId, passwordHash);
+        }
+
+        public static User ValidateUser(string username, string password)
+        {
+            string passwordHash = Helpers.HashPassword(password);
+            return AuthenticateUser(username, passwordHash);
+        }
+
+        public static Employee GetEmployee(int id)
+        {
+            return GetEmployeeById(id);
         }
 
         private static User MapUser(OleDbDataReader reader)
@@ -412,7 +489,7 @@ namespace RailwayIDCardMaker.Services
                 FullName = reader["FullName"]?.ToString(),
                 Designation = reader["Designation"]?.ToString(),
                 Role = reader["Role"]?.ToString(),
-                IsActive = Convert.ToBoolean(reader["IsActive"]),
+                IsActive = true, // Always active since we removed the column
                 CreatedDate = reader["CreatedDate"] != DBNull.Value ? Convert.ToDateTime(reader["CreatedDate"]) : DateTime.MinValue,
                 LastLoginDate = reader["LastLoginDate"] != DBNull.Value ? Convert.ToDateTime(reader["LastLoginDate"]) : (DateTime?)null
             };
@@ -428,7 +505,7 @@ namespace RailwayIDCardMaker.Services
             using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-                string sql = "SELECT * FROM Employees WHERE IsActive = TRUE ORDER BY Name";
+                string sql = "SELECT * FROM Employees ORDER BY Name";
                 using (var command = new OleDbCommand(sql, connection))
                 {
                     using (var reader = command.ExecuteReader())
@@ -451,7 +528,7 @@ namespace RailwayIDCardMaker.Services
                 string sql = "SELECT * FROM Employees WHERE Id = ?";
                 using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("?", id);
+                    command.Parameters.Add("?", OleDbType.Integer).Value = id;
                     using (var reader = command.ExecuteReader())
                     {
                         if (reader.Read())
@@ -476,24 +553,24 @@ namespace RailwayIDCardMaker.Services
                     string sql = @"INSERT INTO Employees (IDCardNumber, Name, FatherName, DateOfBirth, BloodGroup, Gender,
                         Address, MobileNumber, AadhaarNumber, Designation, Department, PlaceOfPosting,
                         ZoneCode, ZoneName, UnitCode, UnitName, PFNumber, DateOfJoining, DateOfRetirement,
-                        DateOfIssue, ValidityDate, IssuingAuthority, IssuingAuthorityDesignation, SerialNumber,
-                        PhotoPath, SignaturePath, AuthoritySignaturePath, IsActive, IsCardPrinted, PrintCount,
-                        CreatedDate, CreatedBy, Remarks)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, FALSE, 0, ?, ?, ?)";
+                        DateOfIssue, ValidityDate, IssuingAuthority, IssuingAuthorityDesignation, QRCodeUrl, SerialNumber,
+                        PhotoPath, SignaturePath, AuthoritySignaturePath, PrintCount, CreatedDate, CreatedBy, Remarks)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                     using (var command = new OleDbCommand(sql, connection))
                     {
                         AddEmployeeParameters(command, employee);
-                        command.Parameters.AddWithValue("?", DateTime.Now);
-                        command.Parameters.AddWithValue("?", employee.CreatedBy ?? "");
-                        command.Parameters.AddWithValue("?", employee.Remarks ?? "");
+                        command.Parameters.Add("?", OleDbType.Integer).Value = 0; // PrintCount
+                        command.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
+                        command.Parameters.Add("?", OleDbType.VarChar, 50).Value = employee.CreatedBy ?? "";
+                        command.Parameters.Add("?", OleDbType.VarChar, 255).Value = employee.Remarks ?? "";
                         command.ExecuteNonQuery();
-                    }
 
-                    // Get the new ID
-                    using (var idCommand = new OleDbCommand("SELECT @@IDENTITY", connection))
-                    {
-                        employee.Id = Convert.ToInt32(idCommand.ExecuteScalar());
+                        // Get the new ID
+                        command.CommandText = "SELECT @@IDENTITY";
+                        command.Parameters.Clear();
+                        var result = command.ExecuteScalar();
+                        return result != null ? Convert.ToInt32(result) : 0;
                     }
                 }
                 else
@@ -503,67 +580,66 @@ namespace RailwayIDCardMaker.Services
                         IDCardNumber = ?, Name = ?, FatherName = ?, DateOfBirth = ?, BloodGroup = ?, Gender = ?,
                         Address = ?, MobileNumber = ?, AadhaarNumber = ?, Designation = ?, Department = ?, PlaceOfPosting = ?,
                         ZoneCode = ?, ZoneName = ?, UnitCode = ?, UnitName = ?, PFNumber = ?, DateOfJoining = ?, DateOfRetirement = ?,
-                        DateOfIssue = ?, ValidityDate = ?, IssuingAuthority = ?, IssuingAuthorityDesignation = ?, SerialNumber = ?,
+                        DateOfIssue = ?, ValidityDate = ?, IssuingAuthority = ?, IssuingAuthorityDesignation = ?, QRCodeUrl = ?, SerialNumber = ?,
                         PhotoPath = ?, SignaturePath = ?, AuthoritySignaturePath = ?, ModifiedDate = ?, ModifiedBy = ?, Remarks = ?
                         WHERE Id = ?";
 
                     using (var command = new OleDbCommand(sql, connection))
                     {
                         AddEmployeeParameters(command, employee);
-                        command.Parameters.AddWithValue("?", DateTime.Now);
-                        command.Parameters.AddWithValue("?", employee.ModifiedBy ?? "");
-                        command.Parameters.AddWithValue("?", employee.Remarks ?? "");
-                        command.Parameters.AddWithValue("?", employee.Id);
+                        command.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
+                        command.Parameters.Add("?", OleDbType.VarChar, 50).Value = employee.ModifiedBy ?? "";
+                        command.Parameters.Add("?", OleDbType.VarChar, 255).Value = employee.Remarks ?? "";
+                        command.Parameters.Add("?", OleDbType.Integer).Value = employee.Id;
                         command.ExecuteNonQuery();
+                        return employee.Id;
                     }
                 }
-
-                return employee.Id;
             }
         }
 
-        private static void AddEmployeeParameters(OleDbCommand command, Employee employee)
+        private static void AddEmployeeParameters(OleDbCommand command, Employee e)
         {
-            command.Parameters.AddWithValue("?", employee.IDCardNumber ?? "");
-            command.Parameters.AddWithValue("?", employee.Name ?? "");
-            command.Parameters.AddWithValue("?", employee.FatherName ?? "");
-            command.Parameters.AddWithValue("?", employee.DateOfBirth.HasValue ? (object)employee.DateOfBirth.Value : DBNull.Value);
-            command.Parameters.AddWithValue("?", employee.BloodGroup ?? "");
-            command.Parameters.AddWithValue("?", employee.Gender ?? "");
-            command.Parameters.AddWithValue("?", employee.Address ?? "");
-            command.Parameters.AddWithValue("?", employee.MobileNumber ?? "");
-            command.Parameters.AddWithValue("?", employee.AadhaarNumber ?? "");
-            command.Parameters.AddWithValue("?", employee.Designation ?? "");
-            command.Parameters.AddWithValue("?", employee.Department ?? "");
-            command.Parameters.AddWithValue("?", employee.PlaceOfPosting ?? "");
-            command.Parameters.AddWithValue("?", employee.ZoneCode ?? "");
-            command.Parameters.AddWithValue("?", employee.ZoneName ?? "");
-            command.Parameters.AddWithValue("?", employee.UnitCode ?? "");
-            command.Parameters.AddWithValue("?", employee.UnitName ?? "");
-            command.Parameters.AddWithValue("?", employee.PFNumber ?? "");
-            command.Parameters.AddWithValue("?", employee.DateOfJoining.HasValue ? (object)employee.DateOfJoining.Value : DBNull.Value);
-            command.Parameters.AddWithValue("?", employee.DateOfRetirement.HasValue ? (object)employee.DateOfRetirement.Value : DBNull.Value);
-            command.Parameters.AddWithValue("?", employee.DateOfIssue.HasValue ? (object)employee.DateOfIssue.Value : DBNull.Value);
-            command.Parameters.AddWithValue("?", employee.ValidityDate.HasValue ? (object)employee.ValidityDate.Value : DBNull.Value);
-            command.Parameters.AddWithValue("?", employee.IssuingAuthority ?? "");
-            command.Parameters.AddWithValue("?", employee.IssuingAuthorityDesignation ?? "");
-            command.Parameters.AddWithValue("?", employee.SerialNumber);
-            command.Parameters.AddWithValue("?", employee.PhotoPath ?? "");
-            command.Parameters.AddWithValue("?", employee.SignaturePath ?? "");
-            command.Parameters.AddWithValue("?", employee.AuthoritySignaturePath ?? "");
+            command.Parameters.Add("?", OleDbType.VarChar, 50).Value = e.IDCardNumber ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.Name ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.FatherName ?? "";
+            command.Parameters.Add("?", OleDbType.Date).Value = e.DateOfBirth.HasValue ? (object)e.DateOfBirth.Value : DBNull.Value;
+            command.Parameters.Add("?", OleDbType.VarChar, 10).Value = e.BloodGroup ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 10).Value = e.Gender ?? "";
+            command.Parameters.Add("?", OleDbType.LongVarChar).Value = e.Address ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 20).Value = e.MobileNumber ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 20).Value = e.AadhaarNumber ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.Designation ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.Department ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.PlaceOfPosting ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 10).Value = e.ZoneCode ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.ZoneName ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 20).Value = e.UnitCode ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.UnitName ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 50).Value = e.PFNumber ?? "";
+            command.Parameters.Add("?", OleDbType.Date).Value = e.DateOfJoining.HasValue ? (object)e.DateOfJoining.Value : DBNull.Value;
+            command.Parameters.Add("?", OleDbType.Date).Value = e.DateOfRetirement.HasValue ? (object)e.DateOfRetirement.Value : DBNull.Value;
+            command.Parameters.Add("?", OleDbType.Date).Value = e.DateOfIssue.HasValue ? (object)e.DateOfIssue.Value : DBNull.Value;
+            command.Parameters.Add("?", OleDbType.Date).Value = e.ValidityDate.HasValue ? (object)e.ValidityDate.Value : DBNull.Value;
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.IssuingAuthority ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 100).Value = e.IssuingAuthorityDesignation ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 255).Value = e.QRCodeUrl ?? "";
+            command.Parameters.Add("?", OleDbType.Integer).Value = e.SerialNumber;
+            command.Parameters.Add("?", OleDbType.VarChar, 255).Value = e.PhotoPath ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 255).Value = e.SignaturePath ?? "";
+            command.Parameters.Add("?", OleDbType.VarChar, 255).Value = e.AuthoritySignaturePath ?? "";
         }
 
-        public static bool DeleteEmployee(int id)
+        public static void DeleteEmployee(int id)
         {
             using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-                // Soft delete
-                string sql = "UPDATE Employees SET IsActive = FALSE WHERE Id = ?";
+                string sql = "DELETE FROM Employees WHERE Id = ?";
                 using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("?", id);
-                    return command.ExecuteNonQuery() > 0;
+                    command.Parameters.Add("?", OleDbType.Integer).Value = id;
+                    command.ExecuteNonQuery();
                 }
             }
         }
@@ -575,16 +651,15 @@ namespace RailwayIDCardMaker.Services
             {
                 connection.Open();
                 string sql = @"SELECT * FROM Employees 
-                              WHERE IsActive = TRUE AND 
-                              (Name LIKE ? OR IDCardNumber LIKE ? OR MobileNumber LIKE ? OR Department LIKE ?)
+                              WHERE (Name LIKE ? OR IDCardNumber LIKE ? OR MobileNumber LIKE ? OR Department LIKE ?)
                               ORDER BY Name";
                 using (var command = new OleDbCommand(sql, connection))
                 {
-                    string term = $"%{searchTerm}%";
-                    command.Parameters.AddWithValue("?", term);
-                    command.Parameters.AddWithValue("?", term);
-                    command.Parameters.AddWithValue("?", term);
-                    command.Parameters.AddWithValue("?", term);
+                    string pattern = $"%{searchTerm}%";
+                    command.Parameters.Add("?", OleDbType.VarChar, 100).Value = pattern;
+                    command.Parameters.Add("?", OleDbType.VarChar, 50).Value = pattern;
+                    command.Parameters.Add("?", OleDbType.VarChar, 20).Value = pattern;
+                    command.Parameters.Add("?", OleDbType.VarChar, 100).Value = pattern;
 
                     using (var reader = command.ExecuteReader())
                     {
@@ -606,7 +681,7 @@ namespace RailwayIDCardMaker.Services
                 IDCardNumber = reader["IDCardNumber"]?.ToString(),
                 Name = reader["Name"]?.ToString(),
                 FatherName = reader["FatherName"]?.ToString(),
-                DateOfBirth = reader["DateOfBirth"] != DBNull.Value ? Convert.ToDateTime(reader["DateOfBirth"]) : (DateTime?)null,
+                DateOfBirth = reader["DateOfBirth"] != DBNull.Value ? (DateTime?)Convert.ToDateTime(reader["DateOfBirth"]) : null,
                 BloodGroup = reader["BloodGroup"]?.ToString(),
                 Gender = reader["Gender"]?.ToString(),
                 Address = reader["Address"]?.ToString(),
@@ -620,22 +695,23 @@ namespace RailwayIDCardMaker.Services
                 UnitCode = reader["UnitCode"]?.ToString(),
                 UnitName = reader["UnitName"]?.ToString(),
                 PFNumber = reader["PFNumber"]?.ToString(),
-                DateOfJoining = reader["DateOfJoining"] != DBNull.Value ? Convert.ToDateTime(reader["DateOfJoining"]) : (DateTime?)null,
-                DateOfRetirement = reader["DateOfRetirement"] != DBNull.Value ? Convert.ToDateTime(reader["DateOfRetirement"]) : (DateTime?)null,
-                DateOfIssue = reader["DateOfIssue"] != DBNull.Value ? Convert.ToDateTime(reader["DateOfIssue"]) : (DateTime?)null,
-                ValidityDate = reader["ValidityDate"] != DBNull.Value ? Convert.ToDateTime(reader["ValidityDate"]) : (DateTime?)null,
+                DateOfJoining = reader["DateOfJoining"] != DBNull.Value ? (DateTime?)Convert.ToDateTime(reader["DateOfJoining"]) : null,
+                DateOfRetirement = reader["DateOfRetirement"] != DBNull.Value ? (DateTime?)Convert.ToDateTime(reader["DateOfRetirement"]) : null,
+                DateOfIssue = reader["DateOfIssue"] != DBNull.Value ? (DateTime?)Convert.ToDateTime(reader["DateOfIssue"]) : null,
+                ValidityDate = reader["ValidityDate"] != DBNull.Value ? (DateTime?)Convert.ToDateTime(reader["ValidityDate"]) : null,
                 IssuingAuthority = reader["IssuingAuthority"]?.ToString(),
                 IssuingAuthorityDesignation = reader["IssuingAuthorityDesignation"]?.ToString(),
+                QRCodeUrl = reader["QRCodeUrl"]?.ToString(),
                 SerialNumber = reader["SerialNumber"] != DBNull.Value ? Convert.ToInt32(reader["SerialNumber"]) : 0,
                 PhotoPath = reader["PhotoPath"]?.ToString(),
                 SignaturePath = reader["SignaturePath"]?.ToString(),
                 AuthoritySignaturePath = reader["AuthoritySignaturePath"]?.ToString(),
-                IsActive = Convert.ToBoolean(reader["IsActive"]),
-                IsCardPrinted = Convert.ToBoolean(reader["IsCardPrinted"]),
-                LastPrintedDate = reader["LastPrintedDate"] != DBNull.Value ? Convert.ToDateTime(reader["LastPrintedDate"]) : (DateTime?)null,
+                IsActive = true,
+                IsCardPrinted = (reader["PrintCount"] != DBNull.Value && Convert.ToInt32(reader["PrintCount"]) > 0),
+                LastPrintedDate = reader["LastPrintedDate"] != DBNull.Value ? (DateTime?)Convert.ToDateTime(reader["LastPrintedDate"]) : null,
                 PrintCount = reader["PrintCount"] != DBNull.Value ? Convert.ToInt32(reader["PrintCount"]) : 0,
-                CreatedDate = reader["CreatedDate"] != DBNull.Value ? Convert.ToDateTime(reader["CreatedDate"]) : DateTime.MinValue,
-                ModifiedDate = reader["ModifiedDate"] != DBNull.Value ? Convert.ToDateTime(reader["ModifiedDate"]) : (DateTime?)null,
+                CreatedDate = reader["CreatedDate"] != DBNull.Value ? Convert.ToDateTime(reader["CreatedDate"]) : DateTime.Now,
+                ModifiedDate = reader["ModifiedDate"] != DBNull.Value ? (DateTime?)Convert.ToDateTime(reader["ModifiedDate"]) : null,
                 CreatedBy = reader["CreatedBy"]?.ToString(),
                 ModifiedBy = reader["ModifiedBy"]?.ToString(),
                 Remarks = reader["Remarks"]?.ToString()
@@ -652,7 +728,7 @@ namespace RailwayIDCardMaker.Services
             using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-                string sql = "SELECT * FROM Zones WHERE IsActive = TRUE ORDER BY Code";
+                string sql = "SELECT * FROM Zones ORDER BY Code";
                 using (var command = new OleDbCommand(sql, connection))
                 {
                     using (var reader = command.ExecuteReader())
@@ -666,13 +742,42 @@ namespace RailwayIDCardMaker.Services
                                 Name = reader["Name"]?.ToString(),
                                 Abbreviation = reader["Abbreviation"]?.ToString(),
                                 Headquarters = reader["Headquarters"]?.ToString(),
-                                IsActive = Convert.ToBoolean(reader["IsActive"])
+                                IsActive = true
                             });
                         }
                     }
                 }
             }
             return zones;
+        }
+
+        public static Zone GetZoneByCode(string code)
+        {
+            using (var connection = new OleDbConnection(ConnectionString))
+            {
+                connection.Open();
+                string sql = "SELECT * FROM Zones WHERE Code = ?";
+                using (var command = new OleDbCommand(sql, connection))
+                {
+                    command.Parameters.Add("?", OleDbType.VarChar, 10).Value = code;
+                    using (var reader = command.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            return new Zone
+                            {
+                                Id = Convert.ToInt32(reader["Id"]),
+                                Code = reader["Code"]?.ToString(),
+                                Name = reader["Name"]?.ToString(),
+                                Abbreviation = reader["Abbreviation"]?.ToString(),
+                                Headquarters = reader["Headquarters"]?.ToString(),
+                                IsActive = true
+                            };
+                        }
+                    }
+                }
+            }
+            return null;
         }
 
         #endregion
@@ -694,9 +799,6 @@ namespace RailwayIDCardMaker.Services
                             return new CardSettings
                             {
                                 Id = Convert.ToInt32(reader["Id"]),
-                                DefaultIssuingAuthority = reader["DefaultIssuingAuthority"]?.ToString(),
-                                DefaultIssuingAuthorityDesignation = reader["DefaultIssuingAuthorityDesignation"]?.ToString(),
-                                DefaultAuthoritySignaturePath = reader["DefaultAuthoritySignaturePath"]?.ToString(),
                                 DefaultZoneCode = reader["DefaultZoneCode"]?.ToString(),
                                 DefaultZoneName = reader["DefaultZoneName"]?.ToString(),
                                 DefaultUnitCode = reader["DefaultUnitCode"]?.ToString(),
@@ -704,8 +806,8 @@ namespace RailwayIDCardMaker.Services
                                 DefaultValidityYears = reader["DefaultValidityYears"] != DBNull.Value ? Convert.ToInt32(reader["DefaultValidityYears"]) : 5,
                                 LastSerialNumber = reader["LastSerialNumber"] != DBNull.Value ? Convert.ToInt32(reader["LastSerialNumber"]) : 0,
                                 DefaultPrinterName = reader["DefaultPrinterName"]?.ToString(),
-                                PrintFrontAndBack = reader["PrintFrontAndBack"] != DBNull.Value && Convert.ToBoolean(reader["PrintFrontAndBack"]),
-                                UseDuplexPrinting = reader["UseDuplexPrinting"] != DBNull.Value && Convert.ToBoolean(reader["UseDuplexPrinting"]),
+                                PrintFrontAndBack = true,
+                                UseDuplexPrinting = false,
                                 LogoPath = reader["LogoPath"]?.ToString(),
                                 OrganizationName = reader["OrganizationName"]?.ToString() ?? "Indian Railways"
                             };
@@ -713,7 +815,7 @@ namespace RailwayIDCardMaker.Services
                     }
                 }
             }
-            return new CardSettings();
+            return new CardSettings { OrganizationName = "Indian Railways", DefaultValidityYears = 5 };
         }
 
         public static void SaveSettings(CardSettings settings)
@@ -722,31 +824,23 @@ namespace RailwayIDCardMaker.Services
             {
                 connection.Open();
                 string sql = @"UPDATE Settings SET 
-                    DefaultIssuingAuthority = ?, DefaultIssuingAuthorityDesignation = ?,
-                    DefaultAuthoritySignaturePath = ?, DefaultZoneCode = ?, DefaultZoneName = ?,
-                    DefaultUnitCode = ?, DefaultUnitName = ?, DefaultValidityYears = ?,
-                    LastSerialNumber = ?, DefaultPrinterName = ?, PrintFrontAndBack = ?,
-                    UseDuplexPrinting = ?, LogoPath = ?, OrganizationName = ?, LastUpdated = ?
+                    DefaultZoneCode = ?, DefaultZoneName = ?, DefaultUnitCode = ?, DefaultUnitName = ?,
+                    DefaultValidityYears = ?, LastSerialNumber = ?, DefaultPrinterName = ?,
+                    LogoPath = ?, OrganizationName = ?, LastUpdated = ?
                     WHERE Id = ?";
-
                 using (var command = new OleDbCommand(sql, connection))
                 {
-                    command.Parameters.AddWithValue("?", settings.DefaultIssuingAuthority ?? "");
-                    command.Parameters.AddWithValue("?", settings.DefaultIssuingAuthorityDesignation ?? "");
-                    command.Parameters.AddWithValue("?", settings.DefaultAuthoritySignaturePath ?? "");
-                    command.Parameters.AddWithValue("?", settings.DefaultZoneCode ?? "");
-                    command.Parameters.AddWithValue("?", settings.DefaultZoneName ?? "");
-                    command.Parameters.AddWithValue("?", settings.DefaultUnitCode ?? "");
-                    command.Parameters.AddWithValue("?", settings.DefaultUnitName ?? "");
-                    command.Parameters.AddWithValue("?", settings.DefaultValidityYears);
-                    command.Parameters.AddWithValue("?", settings.LastSerialNumber);
-                    command.Parameters.AddWithValue("?", settings.DefaultPrinterName ?? "");
-                    command.Parameters.AddWithValue("?", settings.PrintFrontAndBack);
-                    command.Parameters.AddWithValue("?", settings.UseDuplexPrinting);
-                    command.Parameters.AddWithValue("?", settings.LogoPath ?? "");
-                    command.Parameters.AddWithValue("?", settings.OrganizationName ?? "Indian Railways");
-                    command.Parameters.AddWithValue("?", DateTime.Now);
-                    command.Parameters.AddWithValue("?", settings.Id);
+                    command.Parameters.Add("?", OleDbType.VarChar, 10).Value = settings.DefaultZoneCode ?? "";
+                    command.Parameters.Add("?", OleDbType.VarChar, 100).Value = settings.DefaultZoneName ?? "";
+                    command.Parameters.Add("?", OleDbType.VarChar, 10).Value = settings.DefaultUnitCode ?? "";
+                    command.Parameters.Add("?", OleDbType.VarChar, 100).Value = settings.DefaultUnitName ?? "";
+                    command.Parameters.Add("?", OleDbType.Integer).Value = settings.DefaultValidityYears;
+                    command.Parameters.Add("?", OleDbType.Integer).Value = settings.LastSerialNumber;
+                    command.Parameters.Add("?", OleDbType.VarChar, 100).Value = settings.DefaultPrinterName ?? "";
+                    command.Parameters.Add("?", OleDbType.VarChar, 255).Value = settings.LogoPath ?? "";
+                    command.Parameters.Add("?", OleDbType.VarChar, 100).Value = settings.OrganizationName ?? "";
+                    command.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
+                    command.Parameters.Add("?", OleDbType.Integer).Value = settings.Id;
                     command.ExecuteNonQuery();
                 }
             }
@@ -754,26 +848,10 @@ namespace RailwayIDCardMaker.Services
 
         public static int GetNextSerialNumber()
         {
-            using (var connection = new OleDbConnection(ConnectionString))
-            {
-                connection.Open();
-                string sql = "SELECT LastSerialNumber FROM Settings";
-                using (var command = new OleDbCommand(sql, connection))
-                {
-                    int lastSerial = Convert.ToInt32(command.ExecuteScalar() ?? 0);
-                    int nextSerial = lastSerial + 1;
-
-                    // Update the serial number
-                    string updateSql = "UPDATE Settings SET LastSerialNumber = ?";
-                    using (var updateCommand = new OleDbCommand(updateSql, connection))
-                    {
-                        updateCommand.Parameters.AddWithValue("?", nextSerial);
-                        updateCommand.ExecuteNonQuery();
-                    }
-
-                    return nextSerial;
-                }
-            }
+            var settings = GetSettings();
+            settings.LastSerialNumber++;
+            SaveSettings(settings);
+            return settings.LastSerialNumber;
         }
 
         #endregion
@@ -785,50 +863,26 @@ namespace RailwayIDCardMaker.Services
             using (var connection = new OleDbConnection(ConnectionString))
             {
                 connection.Open();
-                string sql = "INSERT INTO PrintLog (EmployeeId, IDCardNumber, PrintedDate, PrintedBy, PrintType) VALUES (?, ?, ?, ?, ?)";
-                using (var command = new OleDbCommand(sql, connection))
+
+                string insertSql = "INSERT INTO PrintLog (EmployeeId, IDCardNumber, PrintedDate, PrintedBy, PrintType) VALUES (?, ?, ?, ?, ?)";
+                using (var command = new OleDbCommand(insertSql, connection))
                 {
-                    command.Parameters.AddWithValue("?", employeeId);
-                    command.Parameters.AddWithValue("?", idCardNumber ?? "");
-                    command.Parameters.AddWithValue("?", DateTime.Now);
-                    command.Parameters.AddWithValue("?", printedBy ?? "");
-                    command.Parameters.AddWithValue("?", printType ?? "");
+                    command.Parameters.Add("?", OleDbType.Integer).Value = employeeId;
+                    command.Parameters.Add("?", OleDbType.VarChar, 50).Value = idCardNumber ?? "";
+                    command.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
+                    command.Parameters.Add("?", OleDbType.VarChar, 50).Value = printedBy ?? "";
+                    command.Parameters.Add("?", OleDbType.VarChar, 20).Value = printType ?? "";
                     command.ExecuteNonQuery();
                 }
 
                 // Update employee print count
-                string updateSql = "UPDATE Employees SET IsCardPrinted = TRUE, LastPrintedDate = ?, PrintCount = PrintCount + 1 WHERE Id = ?";
+                string updateSql = "UPDATE Employees SET LastPrintedDate = ?, PrintCount = PrintCount + 1 WHERE Id = ?";
                 using (var updateCommand = new OleDbCommand(updateSql, connection))
                 {
-                    updateCommand.Parameters.AddWithValue("?", DateTime.Now);
-                    updateCommand.Parameters.AddWithValue("?", employeeId);
+                    updateCommand.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
+                    updateCommand.Parameters.Add("?", OleDbType.Integer).Value = employeeId;
                     updateCommand.ExecuteNonQuery();
                 }
-            }
-        }
-
-        #endregion
-
-        #region Backup Operations
-
-        public static void BackupDatabase(string backupPath)
-        {
-            if (File.Exists(DatabasePath))
-            {
-                File.Copy(DatabasePath, backupPath, true);
-            }
-        }
-
-        public static void RestoreDatabase(string backupPath)
-        {
-            if (File.Exists(backupPath))
-            {
-                // Close all connections first
-                _connectionString = null;
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-
-                File.Copy(backupPath, DatabasePath, true);
             }
         }
 

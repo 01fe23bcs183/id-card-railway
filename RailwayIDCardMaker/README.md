@@ -11,7 +11,7 @@ A Windows desktop application for creating and managing Indian Railway employee 
 - **Employee Management** - Add, edit, delete employee records
 - **ID Card Generation** - Front and back card with Indian Railway design
 - **Photo & Signature** - Upload or capture via webcam
-- **QR Code** - Auto-generated QR code on back of card
+- **QR Code** - Auto-generated QR code on back of card (plain text payload)
 - **Print Support** - Direct printing and print preview
 - **Excel Import/Export** - Bulk import employees from Excel/CSV
 - **Database Backup** - Backup and restore SQLite database
@@ -78,7 +78,7 @@ The application generates ID cards matching the official Indian Railway employee
 - Yellow background
 - Indian Railways logo
 - Employee photo and signature
-- QR code with employee details
+- QR code with employee details as plain text (no link)
 - Blood group display
 
 ## License

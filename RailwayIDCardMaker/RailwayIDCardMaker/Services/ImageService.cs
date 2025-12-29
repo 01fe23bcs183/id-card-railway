@@ -118,6 +118,28 @@ namespace RailwayIDCardMaker.Services
         }
 
         /// <summary>
+        /// Save authority signature
+        /// </summary>
+        public static string SaveAuthoritySignature(Image signature, string employeeId)
+        {
+            if (signature == null)
+            {
+                return null;
+            }
+
+            string directory = Utils.Helpers.GetSignaturesDirectory();
+            string filename = Utils.Helpers.GenerateAuthoritySignatureFilename(employeeId);
+            string filePath = Path.Combine(directory, filename);
+
+            if (SaveImage(signature, filePath, ImageFormat.Png))
+            {
+                return filePath;
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Resize and crop image to fit card dimensions
         /// Maintains aspect ratio and centers the crop
         /// </summary>

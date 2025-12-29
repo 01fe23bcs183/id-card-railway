@@ -13,13 +13,35 @@ namespace RailwayIDCardMaker.Services
     {
         private Employee _currentEmployee;
         private Image _logoImage;
-        private bool _printingBack = false;
+        private int _currentPage = 0;
         private PrintDocument _printDocument;
 
         public PrintService()
         {
             _printDocument = new PrintDocument();
             _printDocument.PrintPage += PrintDocument_PrintPage;
+            _printDocument.BeginPrint += (s, e) => { _currentPage = 0; };
+
+            // Set ID Card paper size: 87mm x 54mm
+            SetIDCardPaperSize();
+        }
+
+        /// <summary>
+        /// Set paper size to ID Card (87mm x 54mm)
+        /// </summary>
+        private void SetIDCardPaperSize()
+        {
+            // ID Card dimensions in hundredths of an inch
+            // 87mm = 3.425 inches = 342.5 (hundredths)
+            // 54mm = 2.126 inches = 212.6 (hundredths)
+            int widthHundredths = 213;  // 54mm
+            int heightHundredths = 343; // 87mm
+
+            PaperSize cardSize = new PaperSize("ID Card (87x54mm)", widthHundredths, heightHundredths);
+            _printDocument.DefaultPageSettings.PaperSize = cardSize;
+
+            // Set margins to minimal (for edge-to-edge printing)
+            _printDocument.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
         }
 
         /// <summary>
@@ -29,7 +51,7 @@ namespace RailwayIDCardMaker.Services
         {
             _currentEmployee = employee;
             _logoImage = logoImage;
-            _printingBack = false;
+            _currentPage = 0;
 
             using (PrintDialog dialog = new PrintDialog())
             {
@@ -42,20 +64,8 @@ namespace RailwayIDCardMaker.Services
                 {
                     try
                     {
-                        // Print front side
                         _printDocument.Print();
-
-                        // Ask to print back side
-                        if (MessageBox.Show("Print the back side of the card?",
-                            "Print Back", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                        {
-                            _printingBack = true;
-                            _printDocument.Print();
-                        }
-
-                        // Update print status
                         UpdatePrintStatus(employee);
-
                         return DialogResult.OK;
                     }
                     catch (Exception ex)
@@ -77,14 +87,29 @@ namespace RailwayIDCardMaker.Services
         {
             _currentEmployee = employee;
             _logoImage = logoImage;
-            _printingBack = false;
+            _currentPage = 0;
+
+            // Ensure paper size is set before preview
+            SetIDCardPaperSize();
 
             using (PrintPreviewDialog preview = new PrintPreviewDialog())
             {
                 preview.Document = _printDocument;
-                preview.Width = 800;
-                preview.Height = 600;
+                preview.Width = 600;
+                preview.Height = 800;
                 preview.ShowIcon = false;
+                
+                // Set zoom to show actual size (100%)
+                // The PrintPreviewControl is accessed through the Controls collection
+                foreach (Control ctrl in preview.Controls)
+                {
+                    if (ctrl is PrintPreviewControl previewCtrl)
+                    {
+                        previewCtrl.Zoom = 1.0; // 100% zoom for actual size
+                        previewCtrl.AutoZoom = false;
+                        break;
+                    }
+                }
 
                 return preview.ShowDialog();
             }
@@ -97,7 +122,7 @@ namespace RailwayIDCardMaker.Services
         {
             _currentEmployee = employee;
             _logoImage = logoImage;
-            _printingBack = false;
+            _currentPage = 0;
 
             try
             {
@@ -106,13 +131,7 @@ namespace RailwayIDCardMaker.Services
                     _printDocument.PrinterSettings.PrinterName = printerName;
                 }
 
-                // Print front
                 _printDocument.Print();
-
-                // Print back
-                _printingBack = true;
-                _printDocument.Print();
-
                 UpdatePrintStatus(employee);
 
                 return true;
@@ -129,53 +148,52 @@ namespace RailwayIDCardMaker.Services
         {
             if (_currentEmployee == null)
             {
+                e.HasMorePages = false;
                 return;
             }
 
-            // Generate card image
-            Bitmap cardImage;
-            if (_printingBack)
-            {
-                cardImage = CardRenderer.RenderCardBack(_currentEmployee);
-            }
-            else
-            {
-                cardImage = CardRenderer.RenderCardFront(_currentEmployee, _logoImage);
-            }
-
+            // Generate card image - Front on page 1, Back on page 2
+            Bitmap cardImage = null;
             try
             {
-                // Calculate print area
-                // Card size: 54mm x 87mm
-                // Convert mm to hundredths of an inch (1mm = 3.937)
-                float cardWidthInch = 54f / 25.4f;  // ~2.126 inches
-                float cardHeightInch = 87f / 25.4f; // ~3.425 inches
+                if (_currentPage == 0)
+                {
+                    // Print FRONT
+                    cardImage = CardRenderer.RenderCardFront(_currentEmployee, _logoImage);
+                }
+                else
+                {
+                    // Print BACK
+                    cardImage = CardRenderer.RenderCardBack(_currentEmployee);
+                }
 
-                // Get printable area
-                float printableWidth = e.MarginBounds.Width;
-                float printableHeight = e.MarginBounds.Height;
+                // ID Card size: 54mm x 87mm
+                // Print at exact size from top-left corner (edge-to-edge)
+                float cardWidthInch = 54f / 25.4f;   // 54mm = 2.126 inches
+                float cardHeightInch = 87f / 25.4f;  // 87mm = 3.425 inches
 
-                // Calculate scale to fit printable area
-                float scaleX = printableWidth / (cardWidthInch * 100);
-                float scaleY = printableHeight / (cardHeightInch * 100);
-                float scale = Math.Min(scaleX, scaleY);
-
-                // Calculate final dimensions
-                float printWidth = cardWidthInch * 100; // in hundredths of inch
+                // Convert to points (100 points per inch)
+                float printWidth = cardWidthInch * 100;
                 float printHeight = cardHeightInch * 100;
 
-                // Center on page
-                float printX = e.MarginBounds.Left + (e.MarginBounds.Width - printWidth) / 2;
-                float printY = e.MarginBounds.Top + (e.MarginBounds.Height - printHeight) / 2;
+                // Print from origin (0,0) for edge-to-edge printing
+                e.Graphics.DrawImage(cardImage, 0, 0, printWidth, printHeight);
 
-                // Draw the card
-                e.Graphics.DrawImage(cardImage, printX, printY, printWidth, printHeight);
-
+                // Check if we need to print more pages
+                _currentPage++;
+                e.HasMorePages = (_currentPage < 2); // 2 pages: front and back
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Print error: {ex.Message}");
                 e.HasMorePages = false;
             }
             finally
             {
-                cardImage.Dispose();
+                if (cardImage != null)
+                {
+                    cardImage.Dispose();
+                }
             }
         }
 
@@ -193,26 +211,11 @@ namespace RailwayIDCardMaker.Services
 
         private void LogPrint(Employee employee)
         {
-            // Log to database (using existing connection)
+            // Use DatabaseService to log print action
             try
             {
-                using (var connection = new System.Data.SQLite.SQLiteConnection(DatabaseService.ConnectionString))
-                {
-                    connection.Open();
-
-                    string sql = @"INSERT INTO PrintLog (EmployeeId, IDCardNumber, PrintedDate, PrintedBy, PrintType)
-                                  VALUES (@empId, @idcard, @date, @user, @type)";
-
-                    using (var command = new System.Data.SQLite.SQLiteCommand(sql, connection))
-                    {
-                        command.Parameters.AddWithValue("@empId", employee.Id);
-                        command.Parameters.AddWithValue("@idcard", employee.IDCardNumber ?? "");
-                        command.Parameters.AddWithValue("@date", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                        command.Parameters.AddWithValue("@user", Environment.UserName);
-                        command.Parameters.AddWithValue("@type", _printingBack ? "Back" : "Front");
-                        command.ExecuteNonQuery();
-                    }
-                }
+                string username = Forms.LoginForm.CurrentUser?.Username ?? Environment.UserName;
+                DatabaseService.LogPrint(employee.Id, employee.IDCardNumber, username, "FrontAndBack");
             }
             catch
             {

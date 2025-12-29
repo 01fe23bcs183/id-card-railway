@@ -41,6 +41,7 @@ namespace RailwayIDCardMaker.Models
         public DateTime? ValidityDate { get; set; }
         public string IssuingAuthority { get; set; }
         public string IssuingAuthorityDesignation { get; set; }
+        public string QRCodeUrl { get; set; }
         public int SerialNumber { get; set; }
 
         // Images (stored as file paths)

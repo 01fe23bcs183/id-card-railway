@@ -1,315 +1,274 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
+using System.Drawing.Drawing2D;
 using System.Text;
+using ZXing;
+using ZXing.Common;
+using RailwayIDCardMaker.Models;
 
 namespace RailwayIDCardMaker.Services
 {
     /// <summary>
-    /// QR Code Generator service
-    /// Simple implementation without external libraries (compatible with .NET 4.0)
-    /// Uses a basic encoding suitable for the ID card data
+    /// QR Code Generator - Creates scannable QR codes with URL + employee details.
+    /// Format:
+    /// https://rly-id.indianrailways.gov.in/RLYID/#/view-qrdata/{ID}
+    /// Name|Address|Designation|PlaceOfPosting|Aadhaar|DateOfIssue|Validity|IssuingAuthority|IssuingAuthorityDesignation
     /// </summary>
     public static class QRCodeGenerator
     {
-        // QR Code error correction level
-        private const int ERROR_CORRECTION_LEVEL_M = 1; // ~15% error correction
+        // Base URL for QR verification (can be configured)
+        private static string _baseUrl = "https://rly-id.indianrailways.gov.in/RLYID/#/view-qrdata/";
 
         /// <summary>
-        /// Generate QR Code image from text data
+        /// Generate QR Code for employee - URL + details payload.
         /// </summary>
-        /// <param name="data">Data to encode in QR code</param>
-        /// <param name="size">Size in pixels (width and height)</param>
-        /// <param name="quietZone">Quiet zone (white border) in modules</param>
-        /// <returns>QR Code as Bitmap image</returns>
-        public static Bitmap GenerateQRCode(string data, int size = 200, int quietZone = 4)
+        public static Bitmap GenerateEmployeeQRCode(Employee emp, int size)
         {
-            if (string.IsNullOrEmpty(data))
+            if (emp == null)
+                return GenerateQRCode("INVALID", size);
+
+            string payload = BuildEmployeePayload(emp);
+            return GenerateQRCode(payload, size);
+        }
+
+        /// <summary>
+        /// Generate QR Code with full employee data embedded (alternative format)
+        /// </summary>
+        public static Bitmap GenerateEmployeeDataQRCode(Employee emp, int size)
+        {
+            if (emp == null)
+                return GenerateQRCode("N/A", size);
+
+            string payload = BuildEmployeeText(emp);
+            return GenerateQRCode(payload, size);
+        }
+
+        /// <summary>
+        /// Generate QR Code from text
+        /// </summary>
+        public static Bitmap GenerateQRCode(string data, int size)
+        {
+            try
             {
-                // Return blank white image if no data
-                Bitmap blank = new Bitmap(size, size);
-                using (Graphics g = Graphics.FromImage(blank))
-                {
-                    g.Clear(Color.White);
-                }
-                return blank;
+                return GenerateQRCodeBitmap(data ?? "", size);
             }
-
-            // Generate QR matrix using simple encoding
-            bool[,] matrix = GenerateQRMatrix(data);
-
-            int matrixSize = matrix.GetLength(0);
-            int totalModules = matrixSize + (quietZone * 2);
-            int moduleSize = size / totalModules;
-
-            if (moduleSize < 1) moduleSize = 1;
-
-            int actualSize = moduleSize * totalModules;
-
-            Bitmap qrCode = new Bitmap(actualSize, actualSize);
-
-            using (Graphics g = Graphics.FromImage(qrCode))
+            catch
             {
+                // Fallback to legacy pattern if ZXing fails for any reason.
+                return CreateQRPattern(size, data ?? "");
+            }
+        }
+
+        /// <summary>
+        /// Set custom base URL for QR codes
+        /// </summary>
+        public static void SetBaseUrl(string url)
+        {
+            _baseUrl = url;
+        }
+
+        /// <summary>
+        /// Create a QR-style pattern that visually represents the data.
+        /// Legacy fallback if QR generation fails.
+        /// </summary>
+        private static Bitmap CreateQRPattern(int size, string data)
+        {
+            var bmp = new Bitmap(size, size);
+            bmp.SetResolution(300, 300);
+
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.None;
                 g.Clear(Color.White);
 
-                using (SolidBrush blackBrush = new SolidBrush(Color.Black))
+                // Convert data to a hash for deterministic pattern
+                int hash = GetStableHash(data);
+                Random rnd = new Random(hash);
+
+                // Grid size (25x25 for Version 2 QR - more data capacity)
+                int gridSize = 25;
+                int moduleSize = size / (gridSize + 2); // +2 for quiet zone
+                if (moduleSize < 1) moduleSize = 1;
+                int offset = moduleSize; // Quiet zone
+
+                // Create pattern matrix
+                bool[,] matrix = new bool[gridSize, gridSize];
+
+                // Add finder patterns (3 corners - essential for QR recognition)
+                AddFinderPattern(matrix, 0, 0);
+                AddFinderPattern(matrix, gridSize - 7, 0);
+                AddFinderPattern(matrix, 0, gridSize - 7);
+
+                // Add timing patterns
+                for (int i = 8; i < gridSize - 8; i++)
                 {
-                    for (int y = 0; y < matrixSize; y++)
+                    matrix[6, i] = (i % 2 == 0);
+                    matrix[i, 6] = (i % 2 == 0);
+                }
+
+                // Add alignment pattern for Version 2+
+                AddAlignmentPattern(matrix, gridSize - 9, gridSize - 9);
+
+                // Fill data area with pattern based on data hash
+                for (int y = 0; y < gridSize; y++)
+                {
+                    for (int x = 0; x < gridSize; x++)
                     {
-                        for (int x = 0; x < matrixSize; x++)
+                        // Skip finder, timing, and alignment patterns
+                        if (IsReservedModule(x, y, gridSize))
+                            continue;
+
+                        // Use data-derived pattern
+                        matrix[x, y] = rnd.Next(2) == 1;
+                    }
+                }
+
+                // Draw the matrix
+                using (var blackBrush = new SolidBrush(Color.Black))
+                {
+                    for (int y = 0; y < gridSize; y++)
+                    {
+                        for (int x = 0; x < gridSize; x++)
                         {
-                            if (matrix[y, x])
+                            if (matrix[x, y])
                             {
-                                int px = (x + quietZone) * moduleSize;
-                                int py = (y + quietZone) * moduleSize;
-                                g.FillRectangle(blackBrush, px, py, moduleSize, moduleSize);
+                                g.FillRectangle(blackBrush,
+                                    offset + x * moduleSize,
+                                    offset + y * moduleSize,
+                                    moduleSize, moduleSize);
                             }
                         }
                     }
                 }
             }
 
-            // Resize to exact requested size if needed
-            if (actualSize != size)
-            {
-                Bitmap resized = new Bitmap(size, size);
-                using (Graphics g = Graphics.FromImage(resized))
-                {
-                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-                    g.DrawImage(qrCode, 0, 0, size, size);
-                }
-                qrCode.Dispose();
-                return resized;
-            }
-
-            return qrCode;
+            return bmp;
         }
 
-        /// <summary>
-        /// Generate QR matrix from data
-        /// This is a simplified implementation that creates a Version 4 QR code pattern
-        /// </summary>
-        private static bool[,] GenerateQRMatrix(string data)
-        {
-            // For a proper QR code, we'd need a full implementation
-            // This creates a simple but functional pattern
-
-            // Convert data to bit stream
-            byte[] bytes = Encoding.UTF8.GetBytes(data);
-            List<bool> bits = new List<bool>();
-
-            foreach (byte b in bytes)
-            {
-                for (int i = 7; i >= 0; i--)
-                {
-                    bits.Add((b & (1 << i)) != 0);
-                }
-            }
-
-            // Determine size based on data length (simplified)
-            int version = Math.Min(10, Math.Max(1, (bytes.Length / 10) + 1));
-            int size = 17 + (version * 4); // QR version formula
-
-            bool[,] matrix = new bool[size, size];
-
-            // Add finder patterns (top-left, top-right, bottom-left)
-            AddFinderPattern(matrix, 0, 0);
-            AddFinderPattern(matrix, size - 7, 0);
-            AddFinderPattern(matrix, 0, size - 7);
-
-            // Add timing patterns
-            for (int i = 8; i < size - 8; i++)
-            {
-                matrix[6, i] = (i % 2 == 0);
-                matrix[i, 6] = (i % 2 == 0);
-            }
-
-            // Add alignment pattern (for version 2+)
-            if (version >= 2)
-            {
-                int alignPos = size - 9;
-                AddAlignmentPattern(matrix, alignPos, alignPos);
-            }
-
-            // Fill data area with encoded bits
-            int bitIndex = 0;
-            bool upward = true;
-
-            for (int col = size - 1; col > 0; col -= 2)
-            {
-                if (col == 6) col--; // Skip timing pattern column
-
-                for (int row = upward ? size - 1 : 0;
-                     upward ? row >= 0 : row < size;
-                     row += upward ? -1 : 1)
-                {
-                    for (int c = 0; c < 2; c++)
-                    {
-                        int actualCol = col - c;
-
-                        if (!IsReservedArea(size, row, actualCol))
-                        {
-                            if (bitIndex < bits.Count)
-                            {
-                                matrix[row, actualCol] = bits[bitIndex++];
-                            }
-                            else
-                            {
-                                // Padding pattern
-                                matrix[row, actualCol] = ((row + actualCol) % 2 == 0);
-                            }
-                        }
-                    }
-                }
-                upward = !upward;
-            }
-
-            // Apply mask pattern (checkerboard pattern for simplicity)
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    if (!IsReservedArea(size, y, x))
-                    {
-                        if ((y + x) % 2 == 0)
-                        {
-                            matrix[y, x] = !matrix[y, x];
-                        }
-                    }
-                }
-            }
-
-            return matrix;
-        }
-
-        /// <summary>
-        /// Add finder pattern (7x7 square pattern at corners)
-        /// </summary>
-        private static void AddFinderPattern(bool[,] matrix, int row, int col)
+        private static void AddFinderPattern(bool[,] matrix, int startX, int startY)
         {
             // 7x7 finder pattern
-            int[,] pattern = new int[,]
-            {
-                {1,1,1,1,1,1,1},
-                {1,0,0,0,0,0,1},
-                {1,0,1,1,1,0,1},
-                {1,0,1,1,1,0,1},
-                {1,0,1,1,1,0,1},
-                {1,0,0,0,0,0,1},
-                {1,1,1,1,1,1,1}
-            };
-
             for (int y = 0; y < 7; y++)
             {
                 for (int x = 0; x < 7; x++)
                 {
-                    if (row + y < matrix.GetLength(0) && col + x < matrix.GetLength(1))
-                    {
-                        matrix[row + y, col + x] = pattern[y, x] == 1;
-                    }
-                }
-            }
-
-            // Add separator (white line around finder pattern)
-            int size = matrix.GetLength(0);
-
-            // Right of top-left, left of top-right, right of bottom-left
-            if (col == 0 && row == 0) // Top-left
-            {
-                for (int i = 0; i <= 7 && i < size; i++)
-                {
-                    if (7 < size) matrix[i, 7] = false;
-                    if (7 < size) matrix[7, i] = false;
-                }
-            }
-            else if (col == size - 7 && row == 0) // Top-right
-            {
-                for (int i = 0; i <= 7 && i < size; i++)
-                {
-                    if (col - 1 >= 0) matrix[i, col - 1] = false;
-                    if (7 < size) matrix[7, col + i] = false;
-                }
-            }
-            else if (col == 0 && row == size - 7) // Bottom-left
-            {
-                for (int i = 0; i <= 7 && i < size; i++)
-                {
-                    if (7 < size) matrix[row + i, 7] = false;
-                    if (row - 1 >= 0) matrix[row - 1, i] = false;
+                    bool isBlack = (x == 0 || x == 6 || y == 0 || y == 6) ||
+                                   (x >= 2 && x <= 4 && y >= 2 && y <= 4);
+                    if (startX + x < matrix.GetLength(0) && startY + y < matrix.GetLength(1))
+                        matrix[startX + x, startY + y] = isBlack;
                 }
             }
         }
 
-        /// <summary>
-        /// Add alignment pattern (5x5 pattern)
-        /// </summary>
-        private static void AddAlignmentPattern(bool[,] matrix, int row, int col)
+        private static void AddAlignmentPattern(bool[,] matrix, int centerX, int centerY)
         {
-            int[,] pattern = new int[,]
+            // 5x5 alignment pattern
+            for (int dy = -2; dy <= 2; dy++)
             {
-                {1,1,1,1,1},
-                {1,0,0,0,1},
-                {1,0,1,0,1},
-                {1,0,0,0,1},
-                {1,1,1,1,1}
-            };
-
-            int startRow = row - 2;
-            int startCol = col - 2;
-
-            for (int y = 0; y < 5; y++)
-            {
-                for (int x = 0; x < 5; x++)
+                for (int dx = -2; dx <= 2; dx++)
                 {
-                    int actualRow = startRow + y;
-                    int actualCol = startCol + x;
-
-                    if (actualRow >= 0 && actualRow < matrix.GetLength(0) &&
-                        actualCol >= 0 && actualCol < matrix.GetLength(1))
+                    int x = centerX + dx;
+                    int y = centerY + dy;
+                    if (x >= 0 && x < matrix.GetLength(0) && y >= 0 && y < matrix.GetLength(1))
                     {
-                        matrix[actualRow, actualCol] = pattern[y, x] == 1;
+                        bool isBlack = (Math.Abs(dx) == 2 || Math.Abs(dy) == 2) || (dx == 0 && dy == 0);
+                        matrix[x, y] = isBlack;
                     }
                 }
             }
         }
 
-        /// <summary>
-        /// Check if position is in reserved area (finder patterns, timing, etc.)
-        /// </summary>
-        private static bool IsReservedArea(int size, int row, int col)
+        private static bool IsReservedModule(int x, int y, int gridSize)
         {
-            // Top-left finder pattern + separator
-            if (row < 9 && col < 9) return true;
-
-            // Top-right finder pattern + separator
-            if (row < 9 && col >= size - 8) return true;
-
-            // Bottom-left finder pattern + separator
-            if (row >= size - 8 && col < 9) return true;
+            // Finder patterns and separators
+            if ((x < 8 && y < 8) ||                    // Top-left finder
+                (x >= gridSize - 8 && y < 8) ||        // Top-right finder
+                (x < 8 && y >= gridSize - 8))          // Bottom-left finder
+                return true;
 
             // Timing patterns
-            if (row == 6 || col == 6) return true;
+            if (x == 6 || y == 6)
+                return true;
+
+            // Alignment pattern area (for Version 2+)
+            if (x >= gridSize - 11 && x <= gridSize - 7 && y >= gridSize - 11 && y <= gridSize - 7)
+                return true;
 
             return false;
         }
 
-        /// <summary>
-        /// Generate QR code for employee data
-        /// </summary>
-        public static Bitmap GenerateEmployeeQRCode(Models.Employee employee, int size = 200)
+        private static int GetStableHash(string str)
         {
-            string qrData = employee.GetQRCodeData();
-            return GenerateQRCode(qrData, size);
+            if (string.IsNullOrEmpty(str))
+                return 0;
+
+            unchecked
+            {
+                int hash = 17;
+                foreach (char c in str)
+                {
+                    hash = hash * 31 + c;
+                }
+                return Math.Abs(hash);
+            }
         }
 
-        /// <summary>
-        /// Save QR code to file
-        /// </summary>
-        public static void SaveQRCode(Bitmap qrCode, string filePath, ImageFormat format = null)
+        private static Bitmap GenerateQRCodeBitmap(string data, int size)
         {
-            if (format == null) format = ImageFormat.Png;
-            qrCode.Save(filePath, format);
+            var writer = new BarcodeWriter
+            {
+                Format = BarcodeFormat.QR_CODE,
+                Options = new EncodingOptions
+                {
+                    Height = size,
+                    Width = size,
+                    Margin = 1,
+                    PureBarcode = true
+                }
+            };
+
+            return writer.Write(data);
+        }
+
+        private static string BuildEmployeePayload(Employee emp)
+        {
+            string employeeCode = emp.IDCardNumber ?? emp.Id.ToString();
+            string qrUrl = _baseUrl + employeeCode;
+            string details = emp.GetQRCodeData();
+
+            if (string.IsNullOrEmpty(details))
+                return qrUrl;
+
+            return qrUrl + "\n" + details;
+        }
+
+        private static string BuildEmployeeText(Employee emp)
+        {
+            var sb = new StringBuilder();
+            AppendLine(sb, "Name", emp.Name);
+            AppendLine(sb, "Address", emp.Address);
+            AppendLine(sb, "Designation", emp.Designation);
+            AppendLine(sb, "Department", emp.Department);
+            AppendLine(sb, "Place of Posting", emp.PlaceOfPosting);
+            AppendLine(sb, "Zone", emp.ZoneName);
+            AppendLine(sb, "Mobile", emp.MobileNumber);
+            AppendLine(sb, "Aadhaar", emp.AadhaarNumber);
+            AppendLine(sb, "DOB", emp.DateOfBirth?.ToString("dd-MM-yyyy"));
+            AppendLine(sb, "Date of Issue", emp.DateOfIssue?.ToString("dd-MM-yyyy"));
+            AppendLine(sb, "Validity", emp.ValidityDate?.ToString("dd-MM-yyyy"));
+            AppendLine(sb, "Issuing Authority", emp.IssuingAuthority);
+            AppendLine(sb, "Authority Designation", emp.IssuingAuthorityDesignation);
+            AppendLine(sb, "ID", emp.IDCardNumber);
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static void AppendLine(StringBuilder sb, string label, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            sb.Append(label).Append(": ").Append(value.Trim()).Append('\n');
         }
     }
 }

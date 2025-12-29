@@ -113,12 +113,33 @@ namespace RailwayIDCardMaker.Forms
 
         private void StopCamera()
         {
-            if (videoSource != null && videoSource.IsRunning)
+            try
             {
-                videoSource.SignalToStop();
-                videoSource.WaitForStop();
-                videoSource = null;
-
+                if (videoSource != null && videoSource.IsRunning)
+                {
+                    videoSource.SignalToStop();
+                    // Use timeout instead of waiting forever
+                    System.Threading.Thread stopThread = new System.Threading.Thread(() =>
+                    {
+                        try
+                        {
+                            videoSource.WaitForStop();
+                        }
+                        catch { }
+                    });
+                    stopThread.Start();
+                    // Wait max 2 seconds
+                    if (!stopThread.Join(2000))
+                    {
+                        // Force stop if timeout
+                        videoSource.Stop();
+                    }
+                    videoSource = null;
+                }
+            }
+            catch { }
+            finally
+            {
                 btnStart.Enabled = true;
                 btnStop.Enabled = false;
                 btnCapture.Enabled = false;
